@@ -15,10 +15,14 @@ func distributor(p Params, c distributorChannels) {
 	// TODO: Create a 2D slice to store the world.
 	imageHeight := p.ImageHeight
 	imageWidth := p.ImageWidth
+	
+	imageInput := c.ioInput
 
-	world := make([][]byte, imageWidth)
+	world := make([][]byte, imageHeight)
 	for i := range world {
-		world[i] = make([]byte, imageHeight)
+		world[i] = make([]byte, imageWidth)
+		// not sure how to breakup string and add to array
+		copy(world[i], imageInput[i])
 	}
 	
 	turn := 0
