@@ -13,7 +13,14 @@ type distributorChannels struct {
 func distributor(p Params, c distributorChannels) {
 
 	// TODO: Create a 2D slice to store the world.
+	imageHeight := p.ImageHeight
+	imageWidth := p.ImageWidth
 
+	world := make([][]byte, imageWidth)
+	for i := range world {
+		world[i] = make([]byte, imageHeight)
+	}
+	
 	turn := 0
 
 
