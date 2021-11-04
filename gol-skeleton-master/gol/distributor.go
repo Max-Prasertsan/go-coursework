@@ -17,7 +17,8 @@ func distributor(p Params, c distributorChannels) {
 	imageWidth := p.ImageWidth
 	
 	imageInput := c.ioInput
-
+	
+	// subject to change.
 	world := make([][]byte, imageHeight)
 	for i := range world {
 		world[i] = make([]byte, imageWidth)
