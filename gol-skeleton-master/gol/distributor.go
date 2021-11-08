@@ -1,6 +1,11 @@
 package gol
 
-import "uk.ac.bris.cs/gameoflife/util"
+import (
+	"fmt"
+	"strconv"
+
+	"uk.ac.bris.cs/gameoflife/util"
+)
 
 type distributorChannels struct {
 	events     chan<- Event
@@ -19,6 +24,7 @@ func modulo(x, m int) int {
 }
 
 func computeNextTurn(oldWorld [][]uint8, imageWidth, imageHeight int) [][]uint8 {
+
 	modifiers := []int{-1, 0, 1}
 	newWorld := make([][]byte, imageHeight)
 	for i := range newWorld {
@@ -27,32 +33,31 @@ func computeNextTurn(oldWorld [][]uint8, imageWidth, imageHeight int) [][]uint8 
 
 	for x := 0; x < imageHeight; x++ {
 		for y := 0; y < imageWidth; y++ {
-
-			var alive_neighbours int = 0
+			var aliveNeighbours = 0
 			for _, modx := range modifiers {
 				for _, mody := range modifiers {
 					if !(modx == 0 && mody == 0) {
-						var modified_x = modulo(x+modx, imageHeight)
-						var modified_y = modulo(y+mody, imageWidth)
-						var state = oldWorld[modified_x][modified_y]
+						var modifiedX = modulo(x+modx, imageHeight)
+						var modifiedY = modulo(y+mody, imageWidth)
+						var state = oldWorld[modifiedX][modifiedY]
 						if state == ALIVE {
-							alive_neighbours++
+							aliveNeighbours++
 						}
 					}
 				}
 			}
 
 			if oldWorld[x][y] == ALIVE {
-				if alive_neighbours < 2 {
+				if aliveNeighbours < 2 {
 					newWorld[x][y] = DEAD
-				} else if alive_neighbours > 3 {
+				} else if aliveNeighbours > 3 {
 					newWorld[x][y] = DEAD
 				} else {
 					newWorld[x][y] = ALIVE
 				}
 
 			} else {
-				if alive_neighbours == 3 {
+				if aliveNeighbours == 3 {
 					newWorld[x][y] = ALIVE
 				} else {
 					newWorld[x][y] = DEAD
@@ -60,7 +65,6 @@ func computeNextTurn(oldWorld [][]uint8, imageWidth, imageHeight int) [][]uint8 
 			}
 		}
 	}
-
 	return newWorld
 }
 
@@ -71,14 +75,18 @@ func distributor(p Params, c distributorChannels) {
 	imageHeight := p.ImageHeight
 	imageWidth := p.ImageWidth
 
+	var filename = strconv.Itoa(imageWidth) + "x" + strconv.Itoa(imageWidth)
+
 	world := make([][]uint8, imageHeight)
 	for i := range world {
 		world[i] = make([]uint8, imageWidth)
 	}
 
+	c.ioCommand <- ioInput
+	c.ioFilename <- filename
+
 	for i := 0; i < imageHeight; i++ {
 		for j := 0; j < imageWidth; j++ {
-
 			world[i][j] = <-c.ioInput
 		}
 	}
@@ -86,10 +94,19 @@ func distributor(p Params, c distributorChannels) {
 	// TODO: Execute all turns of the Game of Life.
 
 	completedTurns := 0
-
 	for i := 0; i < p.Turns; i++ {
+
 		world = computeNextTurn(world, p.ImageWidth, p.ImageHeight)
 		completedTurns++
+	}
+
+	c.ioCommand <- ioOutput
+
+	for _, i := range world {
+		for _, j := range i {
+			fmt.Println(j)
+			c.ioOutput <- j
+		}
 	}
 
 	// TODO: Report the final state using FinalTurnCompleteEvent.
