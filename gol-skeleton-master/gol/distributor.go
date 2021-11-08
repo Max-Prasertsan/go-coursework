@@ -78,6 +78,7 @@ func distributor(p Params, c distributorChannels) {
 
 	for i := 0; i < imageHeight; i++ {
 		for j := 0; j < imageWidth; j++ {
+
 			world[i][j] = <-c.ioInput
 		}
 	}
