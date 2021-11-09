@@ -1,7 +1,6 @@
 package gol
 
 import (
-	"fmt"
 	"strconv"
 
 	"uk.ac.bris.cs/gameoflife/util"
@@ -75,7 +74,7 @@ func distributor(p Params, c distributorChannels) {
 	imageHeight := p.ImageHeight
 	imageWidth := p.ImageWidth
 
-	var filename = strconv.Itoa(imageWidth) + "x" + strconv.Itoa(imageWidth)
+	var filename = strconv.Itoa(imageHeight) + "x" + strconv.Itoa(imageWidth)
 
 	world := make([][]uint8, imageHeight)
 	for i := range world {
@@ -95,16 +94,15 @@ func distributor(p Params, c distributorChannels) {
 
 	completedTurns := 0
 	for i := 0; i < p.Turns; i++ {
-
 		world = computeNextTurn(world, p.ImageWidth, p.ImageHeight)
 		completedTurns++
 	}
 
 	c.ioCommand <- ioOutput
+	c.ioFilename <- filename
 
 	for _, i := range world {
 		for _, j := range i {
-			fmt.Println(j)
 			c.ioOutput <- j
 		}
 	}
