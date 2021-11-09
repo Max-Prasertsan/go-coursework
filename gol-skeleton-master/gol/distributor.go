@@ -30,8 +30,8 @@ func computeNextTurn(oldWorld [][]uint8, imageWidth, imageHeight int) [][]uint8 
 		newWorld[i] = make([]byte, imageWidth)
 	}
 
-	for x := 0; x < imageHeight; x++ {
-		for y := 0; y < imageWidth; y++ {
+	for y := 0; y < imageWidth; y++ {
+		for x := 0; x < imageHeight; x++ {
 			var aliveNeighbours = 0
 			for _, modx := range modifiers {
 				for _, mody := range modifiers {
@@ -113,7 +113,7 @@ func distributor(p Params, c distributorChannels) {
 	for i := 0; i < imageHeight; i++ {
 		for j := 0; j < imageWidth; j++ {
 			if world[i][j] == ALIVE {
-				aliveCells = append(aliveCells, util.Cell{X: i, Y: j})
+				aliveCells = append(aliveCells, util.Cell{X: j, Y: i})
 			}
 		}
 	}
