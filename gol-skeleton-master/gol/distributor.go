@@ -22,16 +22,16 @@ func modulo(x, m int) int {
 	return (x%m + m) % m
 }
 
-func computeNextTurn(oldWorld [][]uint8, imageWidth, imageHeight int) [][]uint8 {
+func computeNextTurn(oldWorld [][]uint8, imageWidth, imageHeight, sliceStart, sliceEnd int) [][]uint8 {
 
 	modifiers := []int{-1, 0, 1}
-	newWorld := make([][]byte, imageHeight)
+	newWorld := make([][]byte, sliceEnd-sliceStart)
 	for i := range newWorld {
 		newWorld[i] = make([]byte, imageWidth)
 	}
 
 	for y := 0; y < imageWidth; y++ {
-		for x := 0; x < imageHeight; x++ {
+		for x := sliceStart; x < sliceEnd; x++ {
 			var aliveNeighbours = 0
 			for _, modx := range modifiers {
 				for _, mody := range modifiers {
@@ -67,6 +67,10 @@ func computeNextTurn(oldWorld [][]uint8, imageWidth, imageHeight int) [][]uint8 
 	return newWorld
 }
 
+func worker(oldWorld [][]uint8, imageWidth, imageHeight, sliceStart, sliceEnd int, out chan<- [][]uint8) {
+	out <- computeNextTurn(oldWorld, imageWidth, imageHeight, sliceStart, sliceEnd)
+}
+
 // distributor divides the work between workers and interacts with other goroutines.
 func distributor(p Params, c distributorChannels) {
 
@@ -92,9 +96,21 @@ func distributor(p Params, c distributorChannels) {
 
 	// TODO: Execute all turns of the Game of Life.
 
+	var outChan []chan [][]uint8
+
 	completedTurns := 0
 	for i := 0; i < p.Turns; i++ {
-		world = computeNextTurn(world, p.ImageWidth, p.ImageHeight)
+		var newWorld [][]uint8
+		for i := 0; i < p.Threads; i++ {
+			outChan[i] = make(chan [][]uint8)
+			sliceStart := (imageHeight / p.Threads) * i
+			sliceEnd := (imageHeight / p.Threads) * (i + 1)
+			go worker(world, imageWidth, imageHeight, sliceStart, sliceEnd, outChan[i])
+		}
+		for i := 0; i < p.Threads; i++ {
+			newWorld = append(newWorld, <-outChan[i]...)
+		}
+		world = newWorld
 		completedTurns++
 	}
 
