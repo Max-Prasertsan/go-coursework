@@ -1,6 +1,7 @@
 package gol
 
 import (
+	"fmt"
 	"strconv"
 
 	"uk.ac.bris.cs/gameoflife/util"
@@ -23,7 +24,7 @@ func modulo(x, m int) int {
 	return (x%m + m) % m
 }
 
-//computeNextTurn coputes the next turn of the game of life on a slice of the game matrix
+//computeNextTurn computes the next turn of the game of life on a slice of the game matrix
 func computeNextTurn(oldWorld [][]uint8, imageWidth, imageHeight, sliceStart, sliceEnd int) [][]uint8 {
 
 	//create new 2D slice to store the result in
@@ -51,20 +52,23 @@ func computeNextTurn(oldWorld [][]uint8, imageWidth, imageHeight, sliceStart, sl
 			}
 
 			//decide the status of the cell in the new world based on the rules of the game of life
+			//fmt.Println(sliceEnd)
+			//fmt.Println("X: ", x, "Y: ", y)
+
 			if oldWorld[x][y] == ALIVE {
 				if aliveNeighbours < 2 {
-					newWorld[x][y] = DEAD
+					newWorld[x - sliceStart][y] = DEAD
 				} else if aliveNeighbours > 3 {
-					newWorld[x][y] = DEAD
+					newWorld[x - sliceStart][y] = DEAD
 				} else {
-					newWorld[x][y] = ALIVE
+					newWorld[x - sliceStart][y] = ALIVE
 				}
 
 			} else {
 				if aliveNeighbours == 3 {
-					newWorld[x][y] = ALIVE
+					newWorld[x - sliceStart][y] = ALIVE
 				} else {
-					newWorld[x][y] = DEAD
+					newWorld[x - sliceStart][y] = DEAD
 				}
 			}
 		}
@@ -73,7 +77,7 @@ func computeNextTurn(oldWorld [][]uint8, imageWidth, imageHeight, sliceStart, sl
 	return newWorld
 }
 
-//worker distributes the slices to computeNextTurn and outputs the result in the corespunding channel
+//worker distributes the slices to computeNextTurn and outputs the result in the corresponding channel
 func worker(oldWorld [][]uint8, imageWidth, imageHeight, sliceStart, sliceEnd int, out chan<- [][]uint8) {
 	out <- computeNextTurn(oldWorld, imageWidth, imageHeight, sliceStart, sliceEnd)
 }
@@ -95,7 +99,7 @@ func distributor(p Params, c distributorChannels) {
 	c.ioCommand <- ioInput //tell io to read from image
 	c.ioFilename <- filename
 
-	for i := 0; i < imageHeight; i++ { //fill the grid with the coresponding values
+	for i := 0; i < imageHeight; i++ { //fill the grid with the corresponding values
 		for j := 0; j < imageWidth; j++ {
 			world[i][j] = <-c.ioInput
 		}
@@ -104,13 +108,16 @@ func distributor(p Params, c distributorChannels) {
 	//Execute all turns of the Game of Life.
 	completedTurns := 0
 	var outChan [32]chan [][]uint8 //create an array of channels
+	//TODO: find a way to allocate channels dynamically
+	//'var outChan []chan [][]uint8' 'var outChan [p.Threads]chan [][]uint8' don't work (???)
 
 	for i := 0; i < p.Turns; i++ { //for each turn of the game
 		var newWorld [][]uint8           //create new empty 2D matrix
 		for i := 0; i < p.Threads; i++ { //for each thread
-			outChan[i] = make(chan [][]uint8)                                           //initialize the i-th output channel
-			sliceStart := (imageHeight / p.Threads) * i                                 //mark the begining of the 2D slice
-			sliceEnd := (imageHeight / p.Threads) * (i + 1)                             //mark the end of the 2D slice
+			outChan[i] = make(chan [][]uint8)               //initialize the i-th output channel
+			sliceStart := (imageHeight / p.Threads) * i     //mark the beginning of the 2D slice
+			sliceEnd := (imageHeight / p.Threads) * (i + 1) //mark the end of the 2D slice
+			fmt.Println(i)
 			go worker(world, imageWidth, imageHeight, sliceStart, sliceEnd, outChan[i]) //hand over the slice to the worker
 		}
 		for i := 0; i < p.Threads; i++ { //for each thread
