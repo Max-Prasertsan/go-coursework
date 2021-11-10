@@ -18,34 +18,39 @@ type distributorChannels struct {
 const ALIVE byte = 0xff
 const DEAD byte = 0x00
 
+//modulo computes the modulo of 2 integers so the result is an integer that neatly wraps in an array
 func modulo(x, m int) int {
 	return (x%m + m) % m
 }
 
+//computeNextTurn coputes the next turn of the game of life on a slice of the game matrix
 func computeNextTurn(oldWorld [][]uint8, imageWidth, imageHeight, sliceStart, sliceEnd int) [][]uint8 {
 
-	modifiers := []int{-1, 0, 1}
+	//create new 2D slice to store the result in
 	newWorld := make([][]byte, sliceEnd-sliceStart)
 	for i := range newWorld {
 		newWorld[i] = make([]byte, imageWidth)
 	}
 
-	for y := 0; y < imageWidth; y++ {
+	modifiers := []int{-1, 0, 1}
+
+	for y := 0; y < imageWidth; y++ { //for each cell in the slice of the old world
 		for x := sliceStart; x < sliceEnd; x++ {
 			var aliveNeighbours = 0
-			for _, modx := range modifiers {
+			for _, modx := range modifiers { //for each neighbour of the cell
 				for _, mody := range modifiers {
 					if !(modx == 0 && mody == 0) {
 						var modifiedX = modulo(x+modx, imageHeight)
 						var modifiedY = modulo(y+mody, imageWidth)
 						var state = oldWorld[modifiedX][modifiedY]
-						if state == ALIVE {
-							aliveNeighbours++
+						if state == ALIVE { //check if the cell is alive
+							aliveNeighbours++ //and add it to the counter
 						}
 					}
 				}
 			}
 
+			//decide the status of the cell in the new world based on the rules of the game of life
 			if oldWorld[x][y] == ALIVE {
 				if aliveNeighbours < 2 {
 					newWorld[x][y] = DEAD
@@ -64,9 +69,11 @@ func computeNextTurn(oldWorld [][]uint8, imageWidth, imageHeight, sliceStart, sl
 			}
 		}
 	}
+
 	return newWorld
 }
 
+//worker distributes the slices to computeNextTurn and outputs the result in the corespunding channel
 func worker(oldWorld [][]uint8, imageWidth, imageHeight, sliceStart, sliceEnd int, out chan<- [][]uint8) {
 	out <- computeNextTurn(oldWorld, imageWidth, imageHeight, sliceStart, sliceEnd)
 }
@@ -74,57 +81,55 @@ func worker(oldWorld [][]uint8, imageWidth, imageHeight, sliceStart, sliceEnd in
 // distributor divides the work between workers and interacts with other goroutines.
 func distributor(p Params, c distributorChannels) {
 
-	// TODO: Create a 2D slice to store the world.
+	//Create a 2D slice to store the world.
 	imageHeight := p.ImageHeight
 	imageWidth := p.ImageWidth
 
 	var filename = strconv.Itoa(imageHeight) + "x" + strconv.Itoa(imageWidth)
 
-	world := make([][]uint8, imageHeight)
+	world := make([][]uint8, imageHeight) //initialize empty 2D matrix
 	for i := range world {
 		world[i] = make([]uint8, imageWidth)
 	}
 
-	c.ioCommand <- ioInput
+	c.ioCommand <- ioInput //tell io to read from image
 	c.ioFilename <- filename
 
-	for i := 0; i < imageHeight; i++ {
+	for i := 0; i < imageHeight; i++ { //fill the grid with the coresponding values
 		for j := 0; j < imageWidth; j++ {
 			world[i][j] = <-c.ioInput
 		}
 	}
 
-	// TODO: Execute all turns of the Game of Life.
-
-	var outChan []chan [][]uint8
-
+	//Execute all turns of the Game of Life.
 	completedTurns := 0
-	for i := 0; i < p.Turns; i++ {
-		var newWorld [][]uint8
-		for i := 0; i < p.Threads; i++ {
-			outChan[i] = make(chan [][]uint8)
-			sliceStart := (imageHeight / p.Threads) * i
-			sliceEnd := (imageHeight / p.Threads) * (i + 1)
-			go worker(world, imageWidth, imageHeight, sliceStart, sliceEnd, outChan[i])
+	var outChan [32]chan [][]uint8 //create an array of channels
+
+	for i := 0; i < p.Turns; i++ { //for each turn of the game
+		var newWorld [][]uint8           //create new empty 2D matrix
+		for i := 0; i < p.Threads; i++ { //for each thread
+			outChan[i] = make(chan [][]uint8)                                           //initialize the i-th output channel
+			sliceStart := (imageHeight / p.Threads) * i                                 //mark the begining of the 2D slice
+			sliceEnd := (imageHeight / p.Threads) * (i + 1)                             //mark the end of the 2D slice
+			go worker(world, imageWidth, imageHeight, sliceStart, sliceEnd, outChan[i]) //hand over the slice to the worker
 		}
-		for i := 0; i < p.Threads; i++ {
-			newWorld = append(newWorld, <-outChan[i]...)
+		for i := 0; i < p.Threads; i++ { //for each thread
+			newWorld = append(newWorld, <-outChan[i]...) //append the slices together
 		}
 		world = newWorld
 		completedTurns++
 	}
 
-	c.ioCommand <- ioOutput
+	c.ioCommand <- ioOutput //tell io to write to image
 	c.ioFilename <- filename
 
-	for _, i := range world {
+	for _, i := range world { //hand over
 		for _, j := range i {
 			c.ioOutput <- j
 		}
 	}
 
-	// TODO: Report the final state using FinalTurnCompleteEvent.
-
+	//Report the final state using FinalTurnCompleteEvent.
 	var aliveCells []util.Cell
 	for i := 0; i < imageHeight; i++ {
 		for j := 0; j < imageWidth; j++ {
