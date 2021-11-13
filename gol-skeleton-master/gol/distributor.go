@@ -17,6 +17,7 @@ type distributorChannels struct {
 const ALIVE byte = 0xff
 const DEAD byte = 0x00
 
+var world [][]uint8
 var completedTurns int
 
 //modulo computes the modulo of 2 integers so the result is an integer that neatly wraps in an array
@@ -25,7 +26,7 @@ func modulo(x, m int) int {
 }
 
 //computeNextTurn computes the next turn of the game of life on a slice of the game matrix
-func computeNextTurn(oldWorld [][]uint8, imageWidth, imageHeight, sliceStart, sliceEnd int) [][]uint8 {
+func computeNextTurn(imageWidth, imageHeight, sliceStart, sliceEnd int) [][]uint8 {
 
 	//create new 2D slice to store the result in
 	newWorld := make([][]byte, sliceEnd-sliceStart)
@@ -43,7 +44,7 @@ func computeNextTurn(oldWorld [][]uint8, imageWidth, imageHeight, sliceStart, sl
 					if !(modx == 0 && mody == 0) {
 						var modifiedX = modulo(x+modx, imageHeight)
 						var modifiedY = modulo(y+mody, imageWidth)
-						var state = oldWorld[modifiedX][modifiedY]
+						var state = world[modifiedX][modifiedY]
 						if state == ALIVE { //check if the cell is alive
 							aliveNeighbours++ //and add it to the counter
 						}
@@ -52,7 +53,7 @@ func computeNextTurn(oldWorld [][]uint8, imageWidth, imageHeight, sliceStart, sl
 			}
 
 			//decide the status of the cell in the new world based on the rules of the game of life
-			if oldWorld[x][y] == ALIVE {
+			if world[x][y] == ALIVE {
 				if aliveNeighbours < 2 {
 					newWorld[x - sliceStart][y] = DEAD
 				} else if aliveNeighbours > 3 {
@@ -75,8 +76,8 @@ func computeNextTurn(oldWorld [][]uint8, imageWidth, imageHeight, sliceStart, sl
 }
 
 //worker distributes the slices to computeNextTurn and outputs the result in the corresponding channel
-func worker(oldWorld [][]uint8, imageWidth, imageHeight, sliceStart, sliceEnd int, out chan<- [][]uint8) {
-	out <- computeNextTurn(oldWorld, imageWidth, imageHeight, sliceStart, sliceEnd)
+func worker(imageWidth, imageHeight, sliceStart, sliceEnd int, out chan<- [][]uint8) {
+	out <- computeNextTurn(imageWidth, imageHeight, sliceStart, sliceEnd)
 }
 
 // distributor divides the work between workers and interacts with other goroutines.
@@ -88,7 +89,7 @@ func distributor(p Params, c distributorChannels) {
 
 	var filename = strconv.Itoa(imageHeight) + "x" + strconv.Itoa(imageWidth)
 
-	world := make([][]uint8, imageHeight) //initialize empty 2D matrix
+	world = make([][]uint8, imageHeight) //initialize empty 2D matrix
 	for i := range world {
 		world[i] = make([]uint8, imageWidth)
 	}
@@ -117,7 +118,7 @@ func distributor(p Params, c distributorChannels) {
 			if i == p.Threads - 1 { //if this the last thread
 				sliceEnd += imageHeight % p.Threads //the slice will include the last few lines left over
 			}
-			go worker(world, imageWidth, imageHeight, sliceStart, sliceEnd, outChan[i]) //hand over the slice to the worker
+			go worker(imageWidth, imageHeight, sliceStart, sliceEnd, outChan[i]) //hand over the slice to the worker
 		}
 		for i := 0; i < p.Threads; i++ { //for each thread
 			newWorld = append(newWorld, <-outChan[i]...) //append the slices together
