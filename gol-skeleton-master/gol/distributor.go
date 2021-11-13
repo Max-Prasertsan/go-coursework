@@ -1,9 +1,7 @@
 package gol
 
 import (
-	"fmt"
 	"strconv"
-
 	"uk.ac.bris.cs/gameoflife/util"
 )
 
@@ -18,6 +16,8 @@ type distributorChannels struct {
 
 const ALIVE byte = 0xff
 const DEAD byte = 0x00
+
+var completedTurns int
 
 //modulo computes the modulo of 2 integers so the result is an integer that neatly wraps in an array
 func modulo(x, m int) int {
@@ -52,9 +52,6 @@ func computeNextTurn(oldWorld [][]uint8, imageWidth, imageHeight, sliceStart, sl
 			}
 
 			//decide the status of the cell in the new world based on the rules of the game of life
-			//fmt.Println(sliceEnd)
-			//fmt.Println("X: ", x, "Y: ", y)
-
 			if oldWorld[x][y] == ALIVE {
 				if aliveNeighbours < 2 {
 					newWorld[x - sliceStart][y] = DEAD
@@ -106,7 +103,7 @@ func distributor(p Params, c distributorChannels) {
 	}
 
 	//Execute all turns of the Game of Life.
-	completedTurns := 0
+	completedTurns = 0
 	var outChan [32]chan [][]uint8 //create an array of channels
 	//TODO: find a way to allocate channels dynamically
 	//'var outChan []chan [][]uint8' 'var outChan [p.Threads]chan [][]uint8' don't work (???)
@@ -117,7 +114,9 @@ func distributor(p Params, c distributorChannels) {
 			outChan[i] = make(chan [][]uint8)               //initialize the i-th output channel
 			sliceStart := (imageHeight / p.Threads) * i     //mark the beginning of the 2D slice
 			sliceEnd := (imageHeight / p.Threads) * (i + 1) //mark the end of the 2D slice
-			fmt.Println(i)
+			if i == p.Threads - 1 { //if this the last thread
+				sliceEnd += imageHeight % p.Threads //the slice will include the last few lines left over
+			}
 			go worker(world, imageWidth, imageHeight, sliceStart, sliceEnd, outChan[i]) //hand over the slice to the worker
 		}
 		for i := 0; i < p.Threads; i++ { //for each thread
