@@ -2,6 +2,7 @@ package gol
 
 import (
 	"strconv"
+	"time"
 	"uk.ac.bris.cs/gameoflife/util"
 )
 
@@ -17,12 +18,40 @@ type distributorChannels struct {
 const ALIVE byte = 0xff
 const DEAD byte = 0x00
 
+//initialise global world, completedTurns, and lastTurn variables
 var world [][]uint8
 var completedTurns int
+var lastTurn = false
 
 //modulo computes the modulo of 2 integers so the result is an integer that neatly wraps in an array
 func modulo(x, m int) int {
 	return (x%m + m) % m
+}
+
+func reportAliveCellCount(eventsChan chan<- Event, done chan bool) {
+	count := 0
+	for {
+		for i := range world {
+			for j := range world[i] {
+				if world[i][j] == ALIVE {
+					count ++
+				}
+			}
+		}
+		switch lastTurn {
+		case false:
+			eventsChan <- AliveCellsCount{
+				CompletedTurns: completedTurns,
+				CellsCount:     count,
+			}
+			count = 0
+			time.Sleep(time.Second * 2)
+		case true:
+			done <- true
+			break
+		}
+
+	}
 }
 
 //computeNextTurn computes the next turn of the game of life on a slice of the game matrix
@@ -103,6 +132,9 @@ func distributor(p Params, c distributorChannels) {
 		}
 	}
 
+	cellCountDone := make (chan bool)
+	go reportAliveCellCount(c.events, cellCountDone)
+
 	//Execute all turns of the Game of Life.
 	completedTurns = 0
 	var outChan [32]chan [][]uint8 //create an array of channels
@@ -155,6 +187,8 @@ func distributor(p Params, c distributorChannels) {
 	c.ioCommand <- ioCheckIdle
 	<-c.ioIdle
 
+	lastTurn = true
+	<-cellCountDone
 	c.events <- StateChange{completedTurns, Quitting}
 
 	// Close the channel to stop the SDL goroutine gracefully. Removing may cause deadlock.
