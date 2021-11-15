@@ -32,24 +32,24 @@ func modulo(x, m int) int {
 func reportAliveCellCount(eventsChan chan<- Event, done chan bool) {
 	count := 0
 	for {
-		if !lastTurn {
+		if !lastTurn { //if it's not the last turn
 			time.Sleep(time.Second * 2)
-			for i := range world {
+			for i := range world { //iterate through the array and count the alive cells
 				for j := range world[i] {
 					if world[i][j] == ALIVE {
 						count ++
 					}
 				}
 			}
-			eventsChan <- AliveCellsCount{
+			eventsChan <- AliveCellsCount{ //send the event through the events channel
 				CompletedTurns: completedTurns,
 				CellsCount:     count,
 			}
 			count = 0
 
-		} else {
-			done <- true
-			break
+		} else { //otherwise
+			done <- true //mark the routine as done
+			break //exit
 		}
 	}
 }
@@ -189,7 +189,7 @@ func distributor(p Params, c distributorChannels) {
 	<-c.ioIdle
 
 	lastTurn = true
-	<-cellCountDone
+	<-cellCountDone //wait for the reportAliveCellCount routine to finish
 	c.events <- StateChange{completedTurns, Quitting}
 
 	// Close the channel to stop the SDL goroutine gracefully. Removing may cause deadlock.
