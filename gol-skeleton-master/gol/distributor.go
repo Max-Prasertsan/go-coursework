@@ -55,7 +55,7 @@ func reportAliveCellCount(eventsChan chan<- Event, done chan bool) {
 }
 
 //computeNextTurn computes the next turn of the game of life on a slice of the game matrix
-func computeNextTurn(imageWidth, imageHeight, sliceStart, sliceEnd int) [][]uint8 {
+func computeNextTurn(eventsChan chan<- Event, imageWidth, imageHeight, sliceStart, sliceEnd int) [][]uint8 {
 
 	//create new 2D slice to store the result in
 	newWorld := make([][]byte, sliceEnd-sliceStart)
@@ -81,10 +81,18 @@ func computeNextTurn(imageWidth, imageHeight, sliceStart, sliceEnd int) [][]uint
 				}
 			}
 
+			func reportCellFlip() {
+
+			}
+
 			//decide the status of the cell in the new world based on the rules of the game of life
 			if world[x][y] == ALIVE {
 				if aliveNeighbours < 2 {
 					newWorld[x - sliceStart][y] = DEAD
+					eventsChan <- CellFlipped{
+						CompletedTurns: completedTurns,
+						Cell: util.Cell{X: x, Y: y},
+					}
 				} else if aliveNeighbours > 3 {
 					newWorld[x - sliceStart][y] = DEAD
 				} else {
@@ -129,6 +137,12 @@ func distributor(p Params, c distributorChannels) {
 	for i := 0; i < imageHeight; i++ { //fill the grid with the corresponding values
 		for j := 0; j < imageWidth; j++ {
 			world[i][j] = <-c.ioInput
+			if world[i][j] == ALIVE {
+				c.events <- CellFlipped{
+					CompletedTurns: 0,
+					Cell: util.Cell{X: j, Y: i},
+				}
+			}
 		}
 	}
 
@@ -151,6 +165,7 @@ func distributor(p Params, c distributorChannels) {
 				sliceEnd += imageHeight % p.Threads //the slice will include the last few lines left over
 			}
 			go worker(imageWidth, imageHeight, sliceStart, sliceEnd, outChan[i]) //hand over the slice to the worker
+
 		}
 		for i := 0; i < p.Threads; i++ { //for each thread
 			newWorld = append(newWorld, <-outChan[i]...) //append the slices together
