@@ -28,29 +28,29 @@ func modulo(x, m int) int {
 	return (x%m + m) % m
 }
 
+//reportAliveCellCount sends AliveCellsCount event in the events channel
 func reportAliveCellCount(eventsChan chan<- Event, done chan bool) {
 	count := 0
 	for {
-		for i := range world {
-			for j := range world[i] {
-				if world[i][j] == ALIVE {
-					count ++
+		if !lastTurn {
+			time.Sleep(time.Second * 2)
+			for i := range world {
+				for j := range world[i] {
+					if world[i][j] == ALIVE {
+						count ++
+					}
 				}
 			}
-		}
-		switch lastTurn {
-		case false:
 			eventsChan <- AliveCellsCount{
 				CompletedTurns: completedTurns,
 				CellsCount:     count,
 			}
 			count = 0
-			time.Sleep(time.Second * 2)
-		case true:
+
+		} else {
 			done <- true
 			break
 		}
-
 	}
 }
 
@@ -137,7 +137,7 @@ func distributor(p Params, c distributorChannels) {
 
 	//Execute all turns of the Game of Life.
 	completedTurns = 0
-	var outChan [32]chan [][]uint8 //create an array of channels
+	var outChan [16]chan [][]uint8 //create an array of channels
 	//TODO: find a way to allocate channels dynamically
 	//'var outChan []chan [][]uint8' 'var outChan [p.Threads]chan [][]uint8' don't work (???)
 
@@ -157,6 +157,7 @@ func distributor(p Params, c distributorChannels) {
 		}
 		world = newWorld
 		completedTurns++
+		c.events <- TurnComplete{CompletedTurns: completedTurns}
 	}
 
 	c.ioCommand <- ioOutput //tell io to write to image
