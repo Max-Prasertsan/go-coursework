@@ -160,6 +160,7 @@ func distributor(p Params, c distributorChannels) {
 		c.events <- TurnComplete{CompletedTurns: completedTurns}
 	}
 
+	filename = filename + "x" + strconv.Itoa(completedTurns)
 	c.ioCommand <- ioOutput //tell io to write to image
 	c.ioFilename <- filename
 
@@ -167,6 +168,11 @@ func distributor(p Params, c distributorChannels) {
 		for _, j := range i {
 			c.ioOutput <- j
 		}
+	}
+
+	c.events <- ImageOutputComplete{
+		CompletedTurns: completedTurns,
+		Filename: filename,
 	}
 
 	//Report the final state using FinalTurnCompleteEvent.

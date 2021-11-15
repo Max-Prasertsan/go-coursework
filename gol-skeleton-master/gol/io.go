@@ -51,7 +51,7 @@ func (io *ioState) writePgmImage() {
 	defer file.Close()
 
 	_, _ = file.WriteString("P5\n")
-	//_, _ = file.WriteString("# PGM file writer by pnmmodules (https://github.com/owainkenwayucl/pnmmodules).\n")
+	_, _ = file.WriteString("# PGM file writer by pnmmodules (https://github.com/owainkenwayucl/pnmmodules).\n")
 	_, _ = file.WriteString(strconv.Itoa(io.params.ImageWidth))
 	_, _ = file.WriteString(" ")
 	_, _ = file.WriteString(strconv.Itoa(io.params.ImageHeight))
