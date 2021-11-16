@@ -81,20 +81,15 @@ func computeNextTurn(eventsChan chan<- Event, imageWidth, imageHeight, sliceStar
 				}
 			}
 
-			func reportCellFlip() {
-
-			}
 
 			//decide the status of the cell in the new world based on the rules of the game of life
 			if world[x][y] == ALIVE {
-				if aliveNeighbours < 2 {
+				if aliveNeighbours < 2 || aliveNeighbours > 3{
 					newWorld[x - sliceStart][y] = DEAD
 					eventsChan <- CellFlipped{
 						CompletedTurns: completedTurns,
 						Cell: util.Cell{X: x, Y: y},
 					}
-				} else if aliveNeighbours > 3 {
-					newWorld[x - sliceStart][y] = DEAD
 				} else {
 					newWorld[x - sliceStart][y] = ALIVE
 				}
@@ -102,6 +97,10 @@ func computeNextTurn(eventsChan chan<- Event, imageWidth, imageHeight, sliceStar
 			} else {
 				if aliveNeighbours == 3 {
 					newWorld[x - sliceStart][y] = ALIVE
+					eventsChan <- CellFlipped{
+						CompletedTurns: completedTurns,
+						Cell: util.Cell{X: x, Y: y},
+					}
 				} else {
 					newWorld[x - sliceStart][y] = DEAD
 				}
@@ -113,12 +112,12 @@ func computeNextTurn(eventsChan chan<- Event, imageWidth, imageHeight, sliceStar
 }
 
 //worker distributes the slices to computeNextTurn and outputs the result in the corresponding channel
-func worker(imageWidth, imageHeight, sliceStart, sliceEnd int, out chan<- [][]uint8) {
-	out <- computeNextTurn(imageWidth, imageHeight, sliceStart, sliceEnd)
+func worker(eventsChan chan<- Event, imageWidth, imageHeight, sliceStart, sliceEnd int, out chan<- [][]uint8) {
+	out <- computeNextTurn(eventsChan, imageWidth, imageHeight, sliceStart, sliceEnd)
 }
 
 // distributor divides the work between workers and interacts with other goroutines.
-func distributor(p Params, c distributorChannels) {
+func distributor(p Params, c distributorChannels, keyPresses <-chan rune) {
 
 	//Create a 2D slice to store the world.
 	imageHeight := p.ImageHeight
@@ -156,6 +155,82 @@ func distributor(p Params, c distributorChannels) {
 	//'var outChan []chan [][]uint8' 'var outChan [p.Threads]chan [][]uint8' don't work (???)
 
 	for i := 0; i < p.Turns; i++ { //for each turn of the game
+
+		select {
+		case keyPress := <-keyPresses:
+			switch keyPress {
+			case 's':
+				c.ioCommand <- ioOutput //tell io to write to image
+				c.ioFilename <- filename + "x" + strconv.Itoa(completedTurns)
+
+				for _, i := range world { //hand over
+					for _, j := range i {
+						c.ioOutput <- j
+					}
+				}
+
+				c.events <- ImageOutputComplete{
+					CompletedTurns: completedTurns,
+					Filename: filename,
+				}
+
+			case 'q':
+				c.ioCommand <- ioOutput //tell io to write to image
+				c.ioFilename <- filename + "x" + strconv.Itoa(completedTurns)
+
+				for _, i := range world { //hand over
+					for _, j := range i {
+						c.ioOutput <- j
+					}
+				}
+
+				c.events <- ImageOutputComplete{
+					CompletedTurns: completedTurns,
+					Filename: filename,
+				}
+				//Report the final state using FinalTurnCompleteEvent.
+				var aliveCells []util.Cell
+				for i := 0; i < imageHeight; i++ {
+					for j := 0; j < imageWidth; j++ {
+						if world[i][j] == ALIVE {
+							aliveCells = append(aliveCells, util.Cell{X: j, Y: i})
+						}
+					}
+				}
+
+				c.events <- FinalTurnComplete{
+					CompletedTurns: completedTurns,
+					Alive:          aliveCells,
+				}
+
+				// Make sure that the Io has finished any output before exiting.
+				c.ioCommand <- ioCheckIdle
+				<-c.ioIdle
+
+				lastTurn = true
+				<-cellCountDone //wait for the reportAliveCellCount routine to finish
+				c.events <- StateChange{completedTurns, Quitting}
+
+				// Close the channel to stop the SDL goroutine gracefully. Removing may cause deadlock.
+				close(c.events)
+
+
+
+			case 'p':
+				pLoop: for {
+					select {
+					case keyPress := <-keyPresses:
+						switch keyPress {
+						case 'p':
+							break pLoop
+						}
+					}
+				}
+
+			}
+		default:
+		}
+		
 		var newWorld [][]uint8           //create new empty 2D matrix
 		for i := 0; i < p.Threads; i++ { //for each thread
 			outChan[i] = make(chan [][]uint8)               //initialize the i-th output channel
@@ -164,7 +239,7 @@ func distributor(p Params, c distributorChannels) {
 			if i == p.Threads - 1 { //if this the last thread
 				sliceEnd += imageHeight % p.Threads //the slice will include the last few lines left over
 			}
-			go worker(imageWidth, imageHeight, sliceStart, sliceEnd, outChan[i]) //hand over the slice to the worker
+			go worker(c.events, imageWidth, imageHeight, sliceStart, sliceEnd, outChan[i]) //hand over the slice to the worker
 
 		}
 		for i := 0; i < p.Threads; i++ { //for each thread
