@@ -122,7 +122,9 @@ func distributor(p Params, c distributorChannels, keyPresses <-chan rune) {
 	//Create a 2D slice to store the world.
 	imageHeight := p.ImageHeight
 	imageWidth := p.ImageWidth
-
+	
+	// filename in the format of "width"x"height" i.e. 16x16
+	// add the ".pgm" in IO
 	var filename = strconv.Itoa(imageHeight) + "x" + strconv.Itoa(imageWidth)
 
 	world = make([][]uint8, imageHeight) //initialize empty 2D matrix
@@ -155,7 +157,8 @@ func distributor(p Params, c distributorChannels, keyPresses <-chan rune) {
 	//'var outChan []chan [][]uint8' 'var outChan [p.Threads]chan [][]uint8' don't work (???)
 
 	for i := 0; i < p.Turns; i++ { //for each turn of the game
-
+		
+		// implementation of part 5. Key press
 		select {
 		case keyPress := <-keyPresses:
 			switch keyPress {
@@ -214,8 +217,6 @@ func distributor(p Params, c distributorChannels, keyPresses <-chan rune) {
 				// Close the channel to stop the SDL goroutine gracefully. Removing may cause deadlock.
 				close(c.events)
 
-
-
 			case 'p':
 				pLoop: for {
 					select {
@@ -247,20 +248,20 @@ func distributor(p Params, c distributorChannels, keyPresses <-chan rune) {
 		}
 		world = newWorld
 		completedTurns++
-		c.events <- TurnComplete{CompletedTurns: completedTurns}
+		c.events <- TurnComplete{CompletedTurns: completedTurns} //declare that the turn is finished.
 	}
 
 	filename = filename + "x" + strconv.Itoa(completedTurns)
 	c.ioCommand <- ioOutput //tell io to write to image
 	c.ioFilename <- filename
 
-	for _, i := range world { //hand over
+	for _, i := range world { //hand over one byte at a time to IO.
 		for _, j := range i {
 			c.ioOutput <- j
 		}
 	}
 
-	c.events <- ImageOutputComplete{
+	c.events <- ImageOutputComplete{ // decalre output is done
 		CompletedTurns: completedTurns,
 		Filename: filename,
 	}
