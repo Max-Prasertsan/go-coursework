@@ -13,7 +13,7 @@ type distributorChannels struct {
 	ioIdle     <-chan bool
 	ioFilename chan<- string
 	ioOutput   chan<- uint8
-	ioInput    <-chan uint8
+ioInput    <-chan uint8
 }
 
 const ALIVE byte = 0xff
@@ -27,6 +27,8 @@ var lastTurn = false
 //modulo computes the modulo of 2 integers so the result is an integer that neatly wraps in an array
 func modulo(x, m int) int {
 	return (x%m + m) % m
+
+	//return (x & m + m) % m
 }
 
 //reportAliveCellCount sends AliveCellsCount event in the events channel
@@ -208,18 +210,18 @@ func distributor(p Params, c distributorChannels, keyPresses <-chan rune) {
 		case keyPress := <-keyPresses:
 			switch keyPress {
 			case 's':
-
 				output(c, filename)
-
 			case 'q':
-
 				finish(c, cellCountDone, filename)
-
 			case 'p':
 				pLoop: for {
 					select {
 					case keyPress := <-keyPresses:
 						switch keyPress {
+						case 's':
+							output(c, filename)
+						case 'q':
+							finish(c, cellCountDone, filename)
 						case 'p':
 							fmt.Println("Continuing")
 							break pLoop
