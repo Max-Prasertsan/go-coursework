@@ -209,11 +209,11 @@ func distributor(p Params, c distributorChannels, keyPresses <-chan rune) {
 			switch keyPress {
 			case 's':
 
-				output(c, filename + "x" + strconv.Itoa(completedTurns))
+				output(c, filename)
 
 			case 'q':
 
-				finish(c, cellCountDone, filename + "x" + strconv.Itoa(completedTurns))
+				finish(c, cellCountDone, filename)
 
 			case 'p':
 				pLoop: for {
@@ -250,6 +250,6 @@ func distributor(p Params, c distributorChannels, keyPresses <-chan rune) {
 		c.events <- TurnComplete{CompletedTurns: completedTurns}
 	}
 
-	finish(c, cellCountDone, filename + "x" + strconv.Itoa(completedTurns))
+	finish(c, cellCountDone, filename)
 
 }
