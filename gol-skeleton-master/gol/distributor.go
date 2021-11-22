@@ -1,6 +1,7 @@
 package gol
 
 import (
+	"fmt"
 	"strconv"
 	"time"
 	"uk.ac.bris.cs/gameoflife/util"
@@ -88,7 +89,7 @@ func computeNextTurn(eventsChan chan<- Event, imageWidth, imageHeight, sliceStar
 					newWorld[x - sliceStart][y] = DEAD
 					eventsChan <- CellFlipped{
 						CompletedTurns: completedTurns,
-						Cell: util.Cell{X: x, Y: y},
+						Cell: util.Cell{X: y, Y: x},
 					}
 				} else {
 					newWorld[x - sliceStart][y] = ALIVE
@@ -99,7 +100,7 @@ func computeNextTurn(eventsChan chan<- Event, imageWidth, imageHeight, sliceStar
 					newWorld[x - sliceStart][y] = ALIVE
 					eventsChan <- CellFlipped{
 						CompletedTurns: completedTurns,
-						Cell: util.Cell{X: x, Y: y},
+						Cell: util.Cell{X: y, Y: x},
 					}
 				} else {
 					newWorld[x - sliceStart][y] = DEAD
@@ -116,15 +117,60 @@ func worker(eventsChan chan<- Event, imageWidth, imageHeight, sliceStart, sliceE
 	out <- computeNextTurn(eventsChan, imageWidth, imageHeight, sliceStart, sliceEnd)
 }
 
+func output(c distributorChannels, filename string) {
+	c.ioCommand <- ioOutput //tell io to write to image
+	c.ioFilename <- filename + "x" + strconv.Itoa(completedTurns)
+
+	for _, i := range world { //hand over
+		for _, j := range i {
+			c.ioOutput <- j
+		}
+	}
+
+	c.events <- ImageOutputComplete{
+		CompletedTurns: completedTurns,
+		Filename: filename,
+	}
+}
+
+func finish(c distributorChannels,cellCountDone <-chan bool ,filename string) {
+	output(c, filename)
+
+	//Report the final state using FinalTurnCompleteEvent.
+	var aliveCells []util.Cell
+	for i := range world {
+		for j := range world[i] {
+			if world[i][j] == ALIVE {
+				aliveCells = append(aliveCells, util.Cell{X: j, Y: i})
+			}
+		}
+	}
+
+	c.events <- FinalTurnComplete{
+		CompletedTurns: completedTurns,
+		Alive:          aliveCells,
+	}
+
+	// Make sure that the Io has finished any output before exiting.
+	c.ioCommand <- ioCheckIdle
+	<-c.ioIdle
+
+	lastTurn = true
+	<-cellCountDone //wait for the reportAliveCellCount routine to finish
+	c.events <- StateChange{completedTurns, Quitting}
+
+	// Close the channel to stop the SDL goroutine gracefully. Removing may cause deadlock.
+	close(c.events)
+
+}
+
 // distributor divides the work between workers and interacts with other goroutines.
 func distributor(p Params, c distributorChannels, keyPresses <-chan rune) {
 
 	//Create a 2D slice to store the world.
 	imageHeight := p.ImageHeight
 	imageWidth := p.ImageWidth
-	
-	// filename in the format of "width"x"height" i.e. 16x16
-	// add the ".pgm" in IO
+
 	var filename = strconv.Itoa(imageHeight) + "x" + strconv.Itoa(imageWidth)
 
 	world = make([][]uint8, imageHeight) //initialize empty 2D matrix
@@ -157,65 +203,17 @@ func distributor(p Params, c distributorChannels, keyPresses <-chan rune) {
 	//'var outChan []chan [][]uint8' 'var outChan [p.Threads]chan [][]uint8' don't work (???)
 
 	for i := 0; i < p.Turns; i++ { //for each turn of the game
-		
-		// implementation of part 5. Key press
+
 		select {
 		case keyPress := <-keyPresses:
 			switch keyPress {
 			case 's':
-				c.ioCommand <- ioOutput //tell io to write to image
-				c.ioFilename <- filename + "x" + strconv.Itoa(completedTurns)
 
-				for _, i := range world { //hand over
-					for _, j := range i {
-						c.ioOutput <- j
-					}
-				}
-
-				c.events <- ImageOutputComplete{
-					CompletedTurns: completedTurns,
-					Filename: filename,
-				}
+				output(c, filename + "x" + strconv.Itoa(completedTurns))
 
 			case 'q':
-				c.ioCommand <- ioOutput //tell io to write to image
-				c.ioFilename <- filename + "x" + strconv.Itoa(completedTurns)
 
-				for _, i := range world { //hand over
-					for _, j := range i {
-						c.ioOutput <- j
-					}
-				}
-
-				c.events <- ImageOutputComplete{
-					CompletedTurns: completedTurns,
-					Filename: filename,
-				}
-				//Report the final state using FinalTurnCompleteEvent.
-				var aliveCells []util.Cell
-				for i := 0; i < imageHeight; i++ {
-					for j := 0; j < imageWidth; j++ {
-						if world[i][j] == ALIVE {
-							aliveCells = append(aliveCells, util.Cell{X: j, Y: i})
-						}
-					}
-				}
-
-				c.events <- FinalTurnComplete{
-					CompletedTurns: completedTurns,
-					Alive:          aliveCells,
-				}
-
-				// Make sure that the Io has finished any output before exiting.
-				c.ioCommand <- ioCheckIdle
-				<-c.ioIdle
-
-				lastTurn = true
-				<-cellCountDone //wait for the reportAliveCellCount routine to finish
-				c.events <- StateChange{completedTurns, Quitting}
-
-				// Close the channel to stop the SDL goroutine gracefully. Removing may cause deadlock.
-				close(c.events)
+				finish(c, cellCountDone, filename + "x" + strconv.Itoa(completedTurns))
 
 			case 'p':
 				pLoop: for {
@@ -223,6 +221,7 @@ func distributor(p Params, c distributorChannels, keyPresses <-chan rune) {
 					case keyPress := <-keyPresses:
 						switch keyPress {
 						case 'p':
+							fmt.Println("Continuing")
 							break pLoop
 						}
 					}
@@ -248,47 +247,9 @@ func distributor(p Params, c distributorChannels, keyPresses <-chan rune) {
 		}
 		world = newWorld
 		completedTurns++
-		c.events <- TurnComplete{CompletedTurns: completedTurns} //declare that the turn is finished.
+		c.events <- TurnComplete{CompletedTurns: completedTurns}
 	}
 
-	filename = filename + "x" + strconv.Itoa(completedTurns)
-	c.ioCommand <- ioOutput //tell io to write to image
-	c.ioFilename <- filename
+	finish(c, cellCountDone, filename + "x" + strconv.Itoa(completedTurns))
 
-	for _, i := range world { //hand over one byte at a time to IO.
-		for _, j := range i {
-			c.ioOutput <- j
-		}
-	}
-
-	c.events <- ImageOutputComplete{ // decalre output is done
-		CompletedTurns: completedTurns,
-		Filename: filename,
-	}
-
-	//Report the final state using FinalTurnCompleteEvent.
-	var aliveCells []util.Cell
-	for i := 0; i < imageHeight; i++ {
-		for j := 0; j < imageWidth; j++ {
-			if world[i][j] == ALIVE {
-				aliveCells = append(aliveCells, util.Cell{X: j, Y: i})
-			}
-		}
-	}
-
-	c.events <- FinalTurnComplete{
-		CompletedTurns: completedTurns,
-		Alive:          aliveCells,
-	}
-
-	// Make sure that the Io has finished any output before exiting.
-	c.ioCommand <- ioCheckIdle
-	<-c.ioIdle
-
-	lastTurn = true
-	<-cellCountDone //wait for the reportAliveCellCount routine to finish
-	c.events <- StateChange{completedTurns, Quitting}
-
-	// Close the channel to stop the SDL goroutine gracefully. Removing may cause deadlock.
-	close(c.events)
 }
