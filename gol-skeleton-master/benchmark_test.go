@@ -16,10 +16,10 @@ func benchMark(t *testing.T){
         p.Threads = threads
         testName := fmt.Sprintf("%dx%dx%d-%d", p.ImageWidth, p.ImageHeight, p.Turns, p.Threads)
         t.Run(testName, func(t *testing.T){
-            for i := 0; i < b.N; i++ {
+	// Issue with t.N. Need TA help later	
+            for i := 0; i < t.N; i++ {
                 events := make(chan gol.Event)
-                go gol.Run(test, events, nil)
-                }
+                go gol.Run(p, events, nil)
             }
         })
     }
