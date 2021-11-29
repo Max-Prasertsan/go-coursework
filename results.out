@@ -1,0 +1,15 @@
+goos: darwin
+goarch: amd64
+pkg: uk.ac.bris.cs/gameoflife
+cpu: Intel(R) Core(TM) i5-5350U CPU @ 1.80GHz
+BenchmarkGol/512x512x100-1-4         	panic: runtime error: index out of range [481] with length 0
+
+goroutine 56 [running]:
+uk.ac.bris.cs/gameoflife/gol.distributor({0x0, 0x0, 0x0, 0x0}, {0xc000090780, 0xc000294ea0, 0xc000294f00, 0xc000294f60, 0xc000295020, 0xc000294fc0}, ...)
+	/Users/pamorn/desktop/go-coursework-develop/gol-skeleton-master/gol/distributor.go:188 +0x9f0
+uk.ac.bris.cs/gameoflife/gol.Run({0x0, 0x0, 0x0, 0x0}, 0xc000090780, 0x0)
+	/Users/pamorn/desktop/go-coursework-develop/gol-skeleton-master/gol/gol.go:37 +0x2bf
+created by uk.ac.bris.cs/gameoflife.BenchmarkGol.func1
+	/Users/pamorn/desktop/go-coursework-develop/gol-skeleton-master/benchmark_test.go:19 +0x37
+exit status 2
+FAIL	uk.ac.bris.cs/gameoflife	2.409s
