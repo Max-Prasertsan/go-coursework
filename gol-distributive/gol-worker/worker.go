@@ -1,6 +1,7 @@
 package main
 import (
 	"flag"
+	"fmt"
 	"math/rand"
 	"net"
 	"net/rpc"
@@ -19,6 +20,7 @@ func modulo(x, m int) int {
 
 func (g *GolOperations) ComputeNextTurn(req stubs.Request, res *stubs.Response) (err error) {
 
+	fmt.Println("Computing a turn...")
 	//create new 2D slice to store the result in
 	newWorld := make([][]byte, req.SliceEnd-req.SliceStart)
 	for i := range newWorld {

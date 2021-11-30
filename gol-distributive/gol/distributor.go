@@ -52,19 +52,16 @@ var lastTurn = false
 //	}
 //}
 
-func makeCall(client rpc.Client) [][]uint8 {
-	request := stubs.Request{
-		World: world,
-	}
+func makeCall(client rpc.Client, request stubs.Request) [][]uint8 {
 	response := new(stubs.Response)
 	client.Call(stubs.ComputeNextTurnHandler, request, response)
 	return response.WorldSlice
 }
 
-////worker distributes the slices to computeNextTurn and outputs the result in the corresponding channel
-//func worker(eventsChan chan<- Event, imageWidth, imageHeight, sliceStart, sliceEnd int, out chan<- [][]uint8) {
-//	out <- computeNextTurn(eventsChan, imageWidth, imageHeight, sliceStart, sliceEnd)
-//}
+//worker distributes the slices to computeNextTurn and outputs the result in the corresponding channel
+func worker(client rpc.Client, request stubs.Request, out chan<- [][]uint8) {
+	out <- makeCall(client, request)
+}
 
 func output(c distributorChannels, filename string) {
 	c.ioCommand <- ioOutput //tell io to write to image
@@ -105,7 +102,7 @@ func finish(c distributorChannels,cellCountDone <-chan bool ,filename string) {
 	<-c.ioIdle
 
 	lastTurn = true
-	<-cellCountDone //wait for the reportAliveCellCount routine to finish
+	//<-cellCountDone //wait for the reportAliveCellCount routine to finish
 	c.events <- StateChange{completedTurns, Quitting}
 
 	// Close the channel to stop the SDL goroutine gracefully. Removing may cause deadlock.
@@ -153,7 +150,6 @@ func distributor(p Params, c distributorChannels, keyPresses <-chan rune) {
 	var outChan [16]chan [][]uint8 //create an array of channels
 	//TODO: find a way to allocate channels dynamically
 	//'var outChan []chan [][]uint8' 'var outChan [p.Threads]chan [][]uint8' don't work (???)
-	response := new(stubs.Response)
 
 	for i := 0; i < p.Turns; i++ { //for each turn of the game
 
@@ -199,12 +195,13 @@ func distributor(p Params, c distributorChannels, keyPresses <-chan rune) {
 				SliceStart: sliceStart,
 				SliceEnd: sliceEnd,
 			}
-			client.Call(stubs.ComputeNextTurnHandler, request, response)
-//			go worker(c.events, imageWidth, imageHeight, sliceStart, sliceEnd, outChan[i]) //hand over the slice to the worker
+			go worker(*client, request, outChan[i]) //hand over the slice to the worker
 
 		}
 
-		newWorld = response.WorldSlice
+		for i := 0; i < p.Threads; i++ {
+			newWorld = append(newWorld, <-outChan[i]...)
+		}
 
 		world = newWorld
 		completedTurns++
