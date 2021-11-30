@@ -1,6 +1,9 @@
 package gol
 
-import "time"
+import (
+	"fmt"
+	"time"
+)
 
 type reporterChannels struct {
 	command	chan   reporterCommand
@@ -47,6 +50,8 @@ func startReporter(w [][]uint8, t int, r reporterChannels) {
 	}
 
 	for {
+		//fmt.Println("got here - reporter")
+		go reporter.countCells()
 		select {
 		case command := <-reporter.channels.command:
 			switch command {
@@ -55,9 +60,10 @@ func startReporter(w [][]uint8, t int, r reporterChannels) {
 				t = <-reporter.channels.turns
 			case reporterCheckIdle:
 				reporter.channels.idle <- true
+			default:
+				fmt.Println("got here - reporter")
+				//reporter.countCells()
 			}
-		default:
-			go reporter.countCells()
 		}
 	}
 }

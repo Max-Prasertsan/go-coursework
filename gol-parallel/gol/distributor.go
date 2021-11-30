@@ -23,45 +23,11 @@ type WorldState struct {
 const ALIVE byte = 0xff
 const DEAD byte = 0x00
 
-//initialise global world, completedTurns, and lastTurn variables
-
 
 //modulo computes the modulo of 2 integers so the result is an integer that neatly wraps in an array
 func modulo(x, m int) int {
 	return (x%m + m) % m
 }
-
-////reportAliveCellCount sends AliveCellsCount event in the events channel
-//func reportAliveCellCount(eventsChan chan<- Event, r aliveCellReporterChannels) {
-//	count := 0
-//	for {
-//		select { //if it's not the last turn
-//		case lastTurn := <-r.lastTurn:
-//			switch lastTurn {
-//			case true:
-//				r.done <- true //mark the routine as done
-//				break        //exit
-//			case false:
-//
-//			}
-//		default:
-//			time.Sleep(time.Second * 2)
-//			for i := range statworld { //iterate through the array and count the alive cells
-//				for j := range WorldState. {
-//					if world[i][j] == ALIVE {
-//						count++
-//					}
-//				}
-//			}
-//			eventsChan <- AliveCellsCount{ //send the event through the events channel
-//				CompletedTurns: completedTurns,
-//				CellsCount:     count,
-//			}
-//			count = 0
-//
-//		}
-//	}
-//}
 
 //computeNextTurn computes the next turn of the game of life on a slice of the game matrix
 func computeNextTurn(eventsChan chan<- Event, s WorldState, imageWidth, imageHeight, sliceStart, sliceEnd int) [][]uint8 {
@@ -144,6 +110,9 @@ func output(c distributorChannels, s WorldState, filename string) {
 func finish(c distributorChannels, r reporterChannels, s WorldState, filename string) {
 	output(c, s, filename)
 
+	r.command <- reporterCheckIdle
+	<-r.idle
+
 	//Report the final state using FinalTurnCompleteEvent.
 	var aliveCells []util.Cell
 	for i := range s.World {
@@ -154,8 +123,7 @@ func finish(c distributorChannels, r reporterChannels, s WorldState, filename st
 		}
 	}
 
-	r.command <- reporterCheckIdle
-	<-r.idle
+
 
 	c.events <- FinalTurnComplete{
 		CompletedTurns: s.CompletedTurns,
@@ -209,13 +177,17 @@ func distributor(p Params, c distributorChannels, keyPresses <-chan rune) {
 		}
 	}
 
-	reporterCommand := make(chan reporterCommand)
+	reporterCommand := make(chan reporterCommand, 5)
 	reporterIdle := make(chan bool)
+	reporterWorld := make(chan [][]uint8)
+	reporterTurns := make(chan int)
 
 	r := reporterChannels{
 		command: reporterCommand,
-		idle: reporterIdle,
-		events: c.events,
+		idle:    reporterIdle,
+		world:   reporterWorld,
+		turns:   reporterTurns,
+		events:  c.events,
 	}
 
 	go startReporter(state.World, 0,r)
@@ -272,12 +244,12 @@ func distributor(p Params, c distributorChannels, keyPresses <-chan rune) {
 		state.CompletedTurns++
 
 		r.command <- reporterUpdate
-		r.turns <- state.CompletedTurns
 		r.world <- state.World
+		r.turns <- state.CompletedTurns
+
 
 		c.events <- TurnComplete{CompletedTurns: state.CompletedTurns}
 	}
-
 
 	finish(c, r, state, filename)
 
