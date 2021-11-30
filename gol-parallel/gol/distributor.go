@@ -141,10 +141,8 @@ func output(c distributorChannels, s WorldState, filename string) {
 	}
 }
 
-func finish(c distributorChannels, r aliveCellReporterChannels, s WorldState, filename string) {
+func finish(c distributorChannels, r reporterChannels, s WorldState, filename string) {
 	output(c, s, filename)
-
-
 
 	//Report the final state using FinalTurnCompleteEvent.
 	var aliveCells []util.Cell
@@ -156,17 +154,22 @@ func finish(c distributorChannels, r aliveCellReporterChannels, s WorldState, fi
 		}
 	}
 
+	r.command <- reporterCheckIdle
+	<-r.idle
+
 	c.events <- FinalTurnComplete{
 		CompletedTurns: s.CompletedTurns,
 		Alive:          aliveCells,
 	}
 
 	// Make sure that the Io has finished any output before exiting.
+
+
+
+
 	c.ioCommand <- ioCheckIdle
 	<-c.ioIdle
 
-	//r.lastTurn <- true
-	//<-r.done //wait for the reportAliveCellCount routine to finish
 	c.events <- StateChange{s.CompletedTurns, Quitting}
 
 	// Close the channel to stop the SDL goroutine gracefully. Removing may cause deadlock.
@@ -206,11 +209,16 @@ func distributor(p Params, c distributorChannels, keyPresses <-chan rune) {
 		}
 	}
 
-	r := aliveCellReporterChannels{
-		done: make(chan bool),
-		lastTurn: make(chan bool),
+	reporterCommand := make(chan reporterCommand)
+	reporterIdle := make(chan bool)
+
+	r := reporterChannels{
+		command: reporterCommand,
+		idle: reporterIdle,
+		events: c.events,
 	}
-	//go reportAliveCellCount(c.events, r)
+
+	go startReporter(state.World, 0,r)
 
 	//Execute all turns of the Game of Life.
 	var outChan [16]chan [][]uint8 //create an array of channels
@@ -262,6 +270,11 @@ func distributor(p Params, c distributorChannels, keyPresses <-chan rune) {
 		}
 		state.World = newWorld
 		state.CompletedTurns++
+
+		r.command <- reporterUpdate
+		r.turns <- state.CompletedTurns
+		r.world <- state.World
+
 		c.events <- TurnComplete{CompletedTurns: state.CompletedTurns}
 	}
 
