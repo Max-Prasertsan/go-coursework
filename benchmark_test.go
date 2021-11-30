@@ -9,17 +9,23 @@ import (
 	//"uk.ac.bris.cs/gameoflife/util"
 )
 // TODO: go test -run=BenchmarkGol -v -bench .
-func BenchmarkGol(t *testing.B){
-    os.Stdout = nil
-
+func BenchmarkGol(b *testing.B){
     for threads := 1; threads <= 16; threads ++{
-        p := gol.Params{Turns: 100, Threads: threads, ImageWidth: 512, ImageHeight: 512}
-        testName := fmt.Sprintf("%dx%dx%d-%d", p.ImageWidth, p.ImageHeight, p.Turns, p.Threads)
-        t.Run(testName, func(t *testing.B){
-           for i := 0; i < p.Turns; i++ {
+        os.Stdout = nil
+        p := gol.Params{
+            Turns: 100,
+            Threads: threads,
+            ImageWidth: 512,
+            ImageHeight: 512,
+        }
+
+        testName := fmt.Sprintf("%dx%ddx%d-%d", p.ImageWidth, p.ImageHeight, p.Turns, p.Threads)
+        b.Run(testName, func(b *testing.B){
+           for i := 0; i < b.N; i++ {
                events := make(chan gol.Event)
                go gol.Run(p, events, nil)
+               for  range events{
+               }
            }
         })
     }
-}
