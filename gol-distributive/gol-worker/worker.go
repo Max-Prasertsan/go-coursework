@@ -75,7 +75,7 @@ func (g *GolOperations) ComputeNextTurn(req stubs.Request, res *stubs.Response) 
 	res.WorldSlice = newWorld
 	res.FlippedCells = flippedCells
 
-	fmt.Println("Flipped cells: ", flippedCells)
+	//fmt.Println("Flipped cells: ", flippedCells)
 
 	return
 }

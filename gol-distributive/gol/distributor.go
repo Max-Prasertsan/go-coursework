@@ -2,10 +2,8 @@ package gol
 
 import (
 	"fmt"
-	"net/rpc"
 	"strconv"
 	"time"
-	"uk.ac.bris.cs/gameoflife/stubs"
 	"uk.ac.bris.cs/gameoflife/util"
 )
 
@@ -21,7 +19,7 @@ ioInput    <-chan uint8
 const ALIVE byte = 0xff
 const DEAD byte = 0x00
 
-//initialise global World, CompletedTurns, and LastTurn variables
+// World initialise global World, CompletedTurns, and LastTurn variables
 var World [][]uint8
 var CompletedTurns int
 var LastTurn = false
@@ -51,24 +49,6 @@ func reportAliveCellCount(eventsChan chan<- Event, done chan bool) {
 			break //exit
 		}
 	}
-}
-
-func makeCall(client rpc.Client, request stubs.Request, eventChan chan<- Event) [][]uint8 {
-	response := new(stubs.Response)
-	client.Call(stubs.ComputeNextTurnHandler, request, response)
-	//fmt.Println("Called server")
-	for i := range response.FlippedCells {
-		eventChan <- CellFlipped{
-			Cell: response.FlippedCells[i],
-			CompletedTurns: CompletedTurns,
-		}
-	}
-	return response.WorldSlice
-}
-
-//worker distributes the slices to computeNextTurn and outputs the result in the corresponding channel
-func worker(client rpc.Client, request stubs.Request, out chan<- [][]uint8, eventChan chan<- Event) {
-	out <- makeCall(client, request, eventChan)
 }
 
 func output(c distributorChannels, filename string) {
@@ -121,10 +101,6 @@ func finish(c distributorChannels,cellCountDone <-chan bool ,filename string) {
 // distributor divides the work between workers and interacts with other goroutines.
 func distributor(p Params, c distributorChannels, keyPresses <-chan rune) {
 
-	client, _ := rpc.Dial("tcp", "127.0.0.1:8030")
-	//client, _ := rpc.Dial("tcp", "54.147.90.44:8030")
-	defer client.Close()
-
 	//Create a 2D slice to store the World.
 	imageHeight := p.ImageHeight
 	imageWidth := p.ImageWidth
@@ -156,9 +132,6 @@ func distributor(p Params, c distributorChannels, keyPresses <-chan rune) {
 
 	//Execute all turns of the Game of Life.
 	CompletedTurns = 0
-	var outChan [16]chan [][]uint8 //create an array of channels
-	//TODO: find a way to allocate channels dynamically
-	//'var outChan []chan [][]uint8' 'var outChan [p.Threads]chan [][]uint8' don't work (???)
 
 	for i := 0; i < p.Turns; i++ { //for each turn of the game
 
@@ -170,7 +143,8 @@ func distributor(p Params, c distributorChannels, keyPresses <-chan rune) {
 			case 'q':
 				finish(c, cellCountDone, filename)
 			case 'p':
-				pLoop: for {
+			pLoop:
+				for {
 					select {
 					case keyPress := <-keyPresses:
 						switch keyPress {
@@ -188,31 +162,8 @@ func distributor(p Params, c distributorChannels, keyPresses <-chan rune) {
 			}
 		default:
 		}
-		
-		var newWorld [][]uint8           //create new empty 2D matrix
-		for i := 0; i < p.Threads; i++ { //for each thread
-			outChan[i] = make(chan [][]uint8)               //initialize the i-th output channel
-			sliceStart := (imageHeight / p.Threads) * i     //mark the beginning of the 2D slice
-			sliceEnd := (imageHeight / p.Threads) * (i + 1) //mark the end of the 2D slice
-			if i == p.Threads - 1 { //if this the last thread
-				sliceEnd += imageHeight % p.Threads //the slice will include the last few lines left over
-			}
-			request := stubs.Request{
-				World:       World,
-				ImageWidth:  imageWidth,
-				ImageHeight: imageHeight,
-				SliceStart:  sliceStart,
-				SliceEnd:    sliceEnd,
-			}
-			go worker(*client, request, outChan[i], c.events) //hand over the slice to the worker
-			//fmt.Println("made worker for thread ", i)
-		}
 
-		for i := 0; i < p.Threads; i++ {
-			newWorld = append(newWorld, <-outChan[i]...)
-		}
-
-		World = newWorld
+		World = Broker(World, imageHeight, imageWidth, c.events)
 		CompletedTurns++
 		c.events <- TurnComplete{CompletedTurns: CompletedTurns}
 	}

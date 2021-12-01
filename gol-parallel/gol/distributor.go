@@ -3,6 +3,7 @@ package gol
 import (
 	"fmt"
 	"strconv"
+	"time"
 	"uk.ac.bris.cs/gameoflife/util"
 )
 
@@ -15,22 +16,47 @@ type distributorChannels struct {
 	ioInput    <-chan uint8
 }
 
-type WorldState struct {
-	World          [][]uint8
-	CompletedTurns int
-}
-
 const ALIVE byte = 0xff
 const DEAD byte = 0x00
 
+//initialise global world, completedTurns, and lastTurn variables
+var world [][]uint8
+var completedTurns int
+var lastTurn = false
 
 //modulo computes the modulo of 2 integers so the result is an integer that neatly wraps in an array
 func modulo(x, m int) int {
 	return (x%m + m) % m
 }
 
+//reportAliveCellCount sends AliveCellsCount event in the events channel
+func reportAliveCellCount(eventsChan chan<- Event, done chan bool) {
+	count := 0
+	for {
+		if !lastTurn { //if it's not the last turn
+			time.Sleep(time.Second * 2)
+			for i := range world { //iterate through the array and count the alive cells
+				for j := range world[i] {
+					if world[i][j] == ALIVE {
+						count ++
+					}
+				}
+			}
+			eventsChan <- AliveCellsCount{ //send the event through the events channel
+				CompletedTurns: completedTurns,
+				CellsCount:     count,
+			}
+			count = 0
+
+		} else { //otherwise
+			done <- true //mark the routine as done
+			break //exit
+		}
+	}
+}
+
 //computeNextTurn computes the next turn of the game of life on a slice of the game matrix
-func computeNextTurn(eventsChan chan<- Event, s WorldState, imageWidth, imageHeight, sliceStart, sliceEnd int) [][]uint8 {
+func computeNextTurn(eventsChan chan<- Event, imageWidth, imageHeight, sliceStart, sliceEnd int) [][]uint8 {
 
 	//create new 2D slice to store the result in
 	newWorld := make([][]byte, sliceEnd-sliceStart)
@@ -48,7 +74,7 @@ func computeNextTurn(eventsChan chan<- Event, s WorldState, imageWidth, imageHei
 					if !(modx == 0 && mody == 0) {
 						var modifiedX = modulo(x+modx, imageHeight)
 						var modifiedY = modulo(y+mody, imageWidth)
-						var state = s.World[modifiedX][modifiedY]
+						var state = world[modifiedX][modifiedY]
 						if state == ALIVE { //check if the cell is alive
 							aliveNeighbours++ //and add it to the counter
 						}
@@ -58,11 +84,11 @@ func computeNextTurn(eventsChan chan<- Event, s WorldState, imageWidth, imageHei
 
 
 			//decide the status of the cell in the new world based on the rules of the game of life
-			if s.World[x][y] == ALIVE {
+			if world[x][y] == ALIVE {
 				if aliveNeighbours < 2 || aliveNeighbours > 3{
 					newWorld[x - sliceStart][y] = DEAD
 					eventsChan <- CellFlipped{
-						CompletedTurns: s.CompletedTurns,
+						CompletedTurns: completedTurns,
 						Cell: util.Cell{X: y, Y: x},
 					}
 				} else {
@@ -73,7 +99,7 @@ func computeNextTurn(eventsChan chan<- Event, s WorldState, imageWidth, imageHei
 				if aliveNeighbours == 3 {
 					newWorld[x - sliceStart][y] = ALIVE
 					eventsChan <- CellFlipped{
-						CompletedTurns: s.CompletedTurns,
+						CompletedTurns: completedTurns,
 						Cell: util.Cell{X: y, Y: x},
 					}
 				} else {
@@ -87,58 +113,51 @@ func computeNextTurn(eventsChan chan<- Event, s WorldState, imageWidth, imageHei
 }
 
 //worker distributes the slices to computeNextTurn and outputs the result in the corresponding channel
-func worker(eventsChan chan<- Event, s WorldState, imageWidth, imageHeight, sliceStart, sliceEnd int, out chan<- [][]uint8) {
-	out <- computeNextTurn(eventsChan, s,imageWidth, imageHeight, sliceStart, sliceEnd)
+func worker(eventsChan chan<- Event, imageWidth, imageHeight, sliceStart, sliceEnd int, out chan<- [][]uint8) {
+	out <- computeNextTurn(eventsChan, imageWidth, imageHeight, sliceStart, sliceEnd)
 }
 
-func output(c distributorChannels, s WorldState, filename string) {
+func output(c distributorChannels, filename string) {
 	c.ioCommand <- ioOutput //tell io to write to image
-	c.ioFilename <- filename + "x" + strconv.Itoa(s.CompletedTurns)
+	c.ioFilename <- filename + "x" + strconv.Itoa(completedTurns)
 
-	for _, i := range s.World { //hand over
+	for _, i := range world { //hand over
 		for _, j := range i {
 			c.ioOutput <- j
 		}
 	}
 
 	c.events <- ImageOutputComplete{
-		CompletedTurns: s.CompletedTurns,
+		CompletedTurns: completedTurns,
 		Filename: filename,
 	}
 }
 
-func finish(c distributorChannels, r reporterChannels, s WorldState, filename string) {
-	output(c, s, filename)
-
-	r.command <- reporterCheckIdle
-	<-r.idle
+func finish(c distributorChannels,cellCountDone <-chan bool ,filename string) {
+	output(c, filename)
 
 	//Report the final state using FinalTurnCompleteEvent.
 	var aliveCells []util.Cell
-	for i := range s.World {
-		for j := range s.World[i] {
-			if s.World[i][j] == ALIVE {
+	for i := range world {
+		for j := range world[i] {
+			if world[i][j] == ALIVE {
 				aliveCells = append(aliveCells, util.Cell{X: j, Y: i})
 			}
 		}
 	}
 
-
-
 	c.events <- FinalTurnComplete{
-		CompletedTurns: s.CompletedTurns,
+		CompletedTurns: completedTurns,
 		Alive:          aliveCells,
 	}
 
 	// Make sure that the Io has finished any output before exiting.
-
-
-
-
 	c.ioCommand <- ioCheckIdle
 	<-c.ioIdle
 
-	c.events <- StateChange{s.CompletedTurns, Quitting}
+	lastTurn = true
+	<-cellCountDone //wait for the reportAliveCellCount routine to finish
+	c.events <- StateChange{completedTurns, Quitting}
 
 	// Close the channel to stop the SDL goroutine gracefully. Removing may cause deadlock.
 	close(c.events)
@@ -154,12 +173,9 @@ func distributor(p Params, c distributorChannels, keyPresses <-chan rune) {
 
 	var filename = strconv.Itoa(imageHeight) + "x" + strconv.Itoa(imageWidth)
 
-	state := WorldState{
-		World:          make([][]uint8, imageHeight),
-		CompletedTurns: 0,
-	}
-	for i := range state.World{
-		state.World[i] = make([]uint8, imageWidth)
+	world = make([][]uint8, imageHeight) //initialize empty 2D matrix
+	for i := range world {
+		world[i] = make([]uint8, imageWidth)
 	}
 
 	c.ioCommand <- ioInput //tell io to read from image
@@ -167,8 +183,8 @@ func distributor(p Params, c distributorChannels, keyPresses <-chan rune) {
 
 	for i := 0; i < imageHeight; i++ { //fill the grid with the corresponding values
 		for j := 0; j < imageWidth; j++ {
-			state.World[i][j] = <-c.ioInput
-			if state.World[i][j] == ALIVE {
+			world[i][j] = <-c.ioInput
+			if world[i][j] == ALIVE {
 				c.events <- CellFlipped{
 					CompletedTurns: 0,
 					Cell: util.Cell{X: j, Y: i},
@@ -177,22 +193,11 @@ func distributor(p Params, c distributorChannels, keyPresses <-chan rune) {
 		}
 	}
 
-	reporterCommand := make(chan reporterCommand, 5)
-	reporterIdle := make(chan bool)
-	reporterWorld := make(chan [][]uint8)
-	reporterTurns := make(chan int)
-
-	r := reporterChannels{
-		command: reporterCommand,
-		idle:    reporterIdle,
-		world:   reporterWorld,
-		turns:   reporterTurns,
-		events:  c.events,
-	}
-
-	go startReporter(state.World, 0,r)
+	cellCountDone := make (chan bool)
+	go reportAliveCellCount(c.events, cellCountDone)
 
 	//Execute all turns of the Game of Life.
+	completedTurns = 0
 	var outChan [16]chan [][]uint8 //create an array of channels
 	//TODO: find a way to allocate channels dynamically
 	//'var outChan []chan [][]uint8' 'var outChan [p.Threads]chan [][]uint8' don't work (???)
@@ -203,29 +208,29 @@ func distributor(p Params, c distributorChannels, keyPresses <-chan rune) {
 		case keyPress := <-keyPresses:
 			switch keyPress {
 			case 's':
-				output(c, state, filename)
+
+				output(c, filename)
+
 			case 'q':
-				finish(c, r, state, filename)
+
+				finish(c, cellCountDone, filename)
+
 			case 'p':
-				pLoop: for {
-					select {
-					case keyPress := <-keyPresses:
-						switch keyPress {
-						case 's':
-							output(c, state, filename)
-						case 'q':
-							finish(c, r, state, filename)
-						case 'p':
-							fmt.Println("Continuing")
-							break pLoop
-						}
+			pLoop: for {
+				select {
+				case keyPress := <-keyPresses:
+					switch keyPress {
+					case 'p':
+						fmt.Println("Continuing")
+						break pLoop
 					}
 				}
+			}
 
 			}
 		default:
 		}
-		
+
 		var newWorld [][]uint8           //create new empty 2D matrix
 		for i := 0; i < p.Threads; i++ { //for each thread
 			outChan[i] = make(chan [][]uint8)               //initialize the i-th output channel
@@ -234,23 +239,21 @@ func distributor(p Params, c distributorChannels, keyPresses <-chan rune) {
 			if i == p.Threads - 1 { //if this the last thread
 				sliceEnd += imageHeight % p.Threads //the slice will include the last few lines left over
 			}
-			go worker(c.events, state,imageWidth, imageHeight, sliceStart, sliceEnd, outChan[i]) //hand over the slice to the worker
+			fmt.Println("created gol worker for thread ", i)
+			go worker(c.events, imageWidth, imageHeight, sliceStart, sliceEnd, outChan[i]) //hand over the slice to the worker
 
 		}
 		for i := 0; i < p.Threads; i++ { //for each thread
 			newWorld = append(newWorld, <-outChan[i]...) //append the slices together
 		}
-		state.World = newWorld
-		state.CompletedTurns++
-
-		r.command <- reporterUpdate
-		r.world <- state.World
-		r.turns <- state.CompletedTurns
+		world = newWorld
+		completedTurns++
 
 
-		c.events <- TurnComplete{CompletedTurns: state.CompletedTurns}
+		c.events <- TurnComplete{CompletedTurns: completedTurns}
+
 	}
-
-	finish(c, r, state, filename)
+	fmt.Println("Completed all the turns")
+	finish(c, cellCountDone, filename)
 
 }
