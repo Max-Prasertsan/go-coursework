@@ -164,6 +164,7 @@ func distributor(p Params, c distributorChannels, keyPresses <-chan rune) {
 		}
 
 		World = Broker(World, imageHeight, imageWidth, c.events)
+
 		CompletedTurns++
 		c.events <- TurnComplete{CompletedTurns: CompletedTurns}
 	}

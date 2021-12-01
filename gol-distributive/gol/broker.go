@@ -16,12 +16,14 @@ func makeCall(client *rpc.Client, request stubs.Request, eventChan chan<- Event)
 			CompletedTurns: CompletedTurns,
 		}
 	}
+
 	return response.WorldSlice
 }
 
 //worker distributes the slices to computeNextTurn and outputs the result in the corresponding channel
 func worker(client *rpc.Client, request stubs.Request, eventChan chan<- Event, out chan<- [][]uint8) {
-	out <- makeCall(client, request, eventChan)
+	t := makeCall(client, request, eventChan)
+	out <- t
 }
 
 func Broker(world [][]uint8, imageHeight, imageWidth int, eventChan chan <- Event) [][]uint8 {
@@ -57,7 +59,7 @@ func Broker(world [][]uint8, imageHeight, imageWidth int, eventChan chan <- Even
 		worker(client, request, eventChan, outChan[i])
 	}
 
-	for i:= range ipAddrs {
+	for i := range ipAddrs {
 		newWorld = append(newWorld, <-outChan[i]...)
 	}
 
