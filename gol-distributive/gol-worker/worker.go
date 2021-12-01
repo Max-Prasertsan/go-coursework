@@ -7,6 +7,7 @@ import (
 	"net/rpc"
 	"time"
 	"uk.ac.bris.cs/gameoflife/stubs"
+	"uk.ac.bris.cs/gameoflife/util"
 )
 
 const ALIVE byte = 0xff
@@ -21,11 +22,16 @@ func modulo(x, m int) int {
 func (g *GolOperations) ComputeNextTurn(req stubs.Request, res *stubs.Response) (err error) {
 
 	fmt.Println("Computing a turn...")
+	fmt.Println("World size: ", req.ImageHeight, "x", req.ImageWidth)
+	fmt.Println("Slice start: ", req.SliceStart)
+	fmt.Println("SliceEnd: ", req.SliceEnd)
 	//create new 2D slice to store the result in
 	newWorld := make([][]byte, req.SliceEnd-req.SliceStart)
 	for i := range newWorld {
 		newWorld[i] = make([]byte, req.ImageWidth)
 	}
+
+	var flippedCells []util.Cell
 
 	modifiers := []int{-1, 0, 1}
 
@@ -50,6 +56,7 @@ func (g *GolOperations) ComputeNextTurn(req stubs.Request, res *stubs.Response) 
 			if req.World[x][y] == ALIVE {
 				if aliveNeighbours < 2 || aliveNeighbours > 3{
 					newWorld[x - req.SliceStart][y] = DEAD
+					flippedCells = append(flippedCells, util.Cell{X:y, Y:x})
 				} else {
 					newWorld[x - req.SliceStart][y] = ALIVE
 				}
@@ -57,6 +64,7 @@ func (g *GolOperations) ComputeNextTurn(req stubs.Request, res *stubs.Response) 
 			} else {
 				if aliveNeighbours == 3 {
 					newWorld[x - req.SliceStart][y] = ALIVE
+					flippedCells = append(flippedCells, util.Cell{X:y, Y:x})
 				} else {
 					newWorld[x - req.SliceStart][y] = DEAD
 				}
@@ -65,6 +73,10 @@ func (g *GolOperations) ComputeNextTurn(req stubs.Request, res *stubs.Response) 
 	}
 
 	res.WorldSlice = newWorld
+	res.FlippedCells = flippedCells
+
+	fmt.Println("Flipped cells: ", flippedCells)
+
 	return
 }
 

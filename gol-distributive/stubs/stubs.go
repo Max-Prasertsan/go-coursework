@@ -1,5 +1,7 @@
 package stubs
 
+import "uk.ac.bris.cs/gameoflife/util"
+
 var ComputeNextTurnHandler = "GolOperations.ComputeNextTurn"
 
 type Request struct {
@@ -12,4 +14,5 @@ type Request struct {
 
 type Response struct {
 	WorldSlice [][]uint8
+	FlippedCells []util.Cell
 }

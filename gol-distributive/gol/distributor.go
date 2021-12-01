@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/rpc"
 	"strconv"
+	"time"
 	"uk.ac.bris.cs/gameoflife/stubs"
 	"uk.ac.bris.cs/gameoflife/util"
 )
@@ -20,62 +21,69 @@ ioInput    <-chan uint8
 const ALIVE byte = 0xff
 const DEAD byte = 0x00
 
-//initialise global world, completedTurns, and lastTurn variables
-var world [][]uint8
-var completedTurns int
-var lastTurn = false
+//initialise global World, CompletedTurns, and LastTurn variables
+var World [][]uint8
+var CompletedTurns int
+var LastTurn = false
 
 
 //reportAliveCellCount sends AliveCellsCount event in the events channel
-//func reportAliveCellCount(eventsChan chan<- Event, done chan bool) {
-//	count := 0
-//	for {
-//		if !lastTurn { //if it's not the last turn
-//			time.Sleep(time.Second * 2)
-//			for i := range world { //iterate through the array and count the alive cells
-//				for j := range world[i] {
-//					if world[i][j] == ALIVE {
-//						count ++
-//					}
-//				}
-//			}
-//			eventsChan <- AliveCellsCount{ //send the event through the events channel
-//				CompletedTurns: completedTurns,
-//				CellsCount:     count,
-//			}
-//			count = 0
-//
-//		} else { //otherwise
-//			done <- true //mark the routine as done
-//			break //exit
-//		}
-//	}
-//}
+func reportAliveCellCount(eventsChan chan<- Event, done chan bool) {
+	count := 0
+	for {
+		if !LastTurn { //if it's not the last turn
+			time.Sleep(time.Second * 2)
+			for i := range World { //iterate through the array and count the alive cells
+				for j := range World[i] {
+					if World[i][j] == ALIVE {
+						count ++
+					}
+				}
+			}
+			eventsChan <- AliveCellsCount{ //send the event through the events channel
+				CompletedTurns: CompletedTurns,
+				CellsCount:     count,
+			}
+			count = 0
 
-func makeCall(client rpc.Client, request stubs.Request) [][]uint8 {
+		} else { //otherwise
+			done <- true //mark the routine as done
+			break //exit
+		}
+	}
+}
+
+func makeCall(client rpc.Client, request stubs.Request, eventChan chan<- Event) [][]uint8 {
 	response := new(stubs.Response)
 	client.Call(stubs.ComputeNextTurnHandler, request, response)
+	//fmt.Println("Called server")
+	for i := range response.FlippedCells {
+		eventChan <- CellFlipped{
+			Cell: response.FlippedCells[i],
+			CompletedTurns: CompletedTurns,
+		}
+	}
 	return response.WorldSlice
 }
 
 //worker distributes the slices to computeNextTurn and outputs the result in the corresponding channel
-func worker(client rpc.Client, request stubs.Request, out chan<- [][]uint8) {
-	out <- makeCall(client, request)
+func worker(client rpc.Client, request stubs.Request, out chan<- [][]uint8, eventChan chan<- Event) {
+	out <- makeCall(client, request, eventChan)
 }
 
 func output(c distributorChannels, filename string) {
 	c.ioCommand <- ioOutput //tell io to write to image
-	c.ioFilename <- filename + "x" + strconv.Itoa(completedTurns)
+	c.ioFilename <- filename + "x" + strconv.Itoa(CompletedTurns)
 
-	for _, i := range world { //hand over
+	for _, i := range World { //hand over
 		for _, j := range i {
 			c.ioOutput <- j
 		}
 	}
 
 	c.events <- ImageOutputComplete{
-		CompletedTurns: completedTurns,
-		Filename: filename,
+		CompletedTurns: CompletedTurns,
+		Filename:       filename,
 	}
 }
 
@@ -84,26 +92,26 @@ func finish(c distributorChannels,cellCountDone <-chan bool ,filename string) {
 
 	//Report the final state using FinalTurnCompleteEvent.
 	var aliveCells []util.Cell
-	for i := range world {
-		for j := range world[i] {
-			if world[i][j] == ALIVE {
+	for i := range World {
+		for j := range World[i] {
+			if World[i][j] == ALIVE {
 				aliveCells = append(aliveCells, util.Cell{X: j, Y: i})
 			}
 		}
 	}
 
 	c.events <- FinalTurnComplete{
-		CompletedTurns: completedTurns,
+		CompletedTurns: CompletedTurns,
 		Alive:          aliveCells,
 	}
+	LastTurn = true
 
 	// Make sure that the Io has finished any output before exiting.
 	c.ioCommand <- ioCheckIdle
 	<-c.ioIdle
 
-	lastTurn = true
-	//<-cellCountDone //wait for the reportAliveCellCount routine to finish
-	c.events <- StateChange{completedTurns, Quitting}
+	<-cellCountDone //wait for the reportAliveCellCount routine to finish
+	c.events <- StateChange{CompletedTurns, Quitting}
 
 	// Close the channel to stop the SDL goroutine gracefully. Removing may cause deadlock.
 	close(c.events)
@@ -114,17 +122,18 @@ func finish(c distributorChannels,cellCountDone <-chan bool ,filename string) {
 func distributor(p Params, c distributorChannels, keyPresses <-chan rune) {
 
 	client, _ := rpc.Dial("tcp", "127.0.0.1:8030")
+	//client, _ := rpc.Dial("tcp", "54.147.90.44:8030")
 	defer client.Close()
 
-	//Create a 2D slice to store the world.
+	//Create a 2D slice to store the World.
 	imageHeight := p.ImageHeight
 	imageWidth := p.ImageWidth
 
 	var filename = strconv.Itoa(imageHeight) + "x" + strconv.Itoa(imageWidth)
 
-	world = make([][]uint8, imageHeight) //initialize empty 2D matrix
-	for i := range world {
-		world[i] = make([]uint8, imageWidth)
+	World = make([][]uint8, imageHeight) //initialize empty 2D matrix
+	for i := range World {
+		World[i] = make([]uint8, imageWidth)
 	}
 
 	c.ioCommand <- ioInput //tell io to read from image
@@ -132,8 +141,8 @@ func distributor(p Params, c distributorChannels, keyPresses <-chan rune) {
 
 	for i := 0; i < imageHeight; i++ { //fill the grid with the corresponding values
 		for j := 0; j < imageWidth; j++ {
-			world[i][j] = <-c.ioInput
-			if world[i][j] == ALIVE {
+			World[i][j] = <-c.ioInput
+			if World[i][j] == ALIVE {
 				c.events <- CellFlipped{
 					CompletedTurns: 0,
 					Cell: util.Cell{X: j, Y: i},
@@ -143,10 +152,10 @@ func distributor(p Params, c distributorChannels, keyPresses <-chan rune) {
 	}
 
 	cellCountDone := make(chan bool)
-	//go reportAliveCellCount(c.events, cellCountDone)
+	go reportAliveCellCount(c.events, cellCountDone)
 
 	//Execute all turns of the Game of Life.
-	completedTurns = 0
+	CompletedTurns = 0
 	var outChan [16]chan [][]uint8 //create an array of channels
 	//TODO: find a way to allocate channels dynamically
 	//'var outChan []chan [][]uint8' 'var outChan [p.Threads]chan [][]uint8' don't work (???)
@@ -189,23 +198,23 @@ func distributor(p Params, c distributorChannels, keyPresses <-chan rune) {
 				sliceEnd += imageHeight % p.Threads //the slice will include the last few lines left over
 			}
 			request := stubs.Request{
-				World: world,
-				ImageWidth: imageWidth,
+				World:       World,
+				ImageWidth:  imageWidth,
 				ImageHeight: imageHeight,
-				SliceStart: sliceStart,
-				SliceEnd: sliceEnd,
+				SliceStart:  sliceStart,
+				SliceEnd:    sliceEnd,
 			}
-			go worker(*client, request, outChan[i]) //hand over the slice to the worker
-
+			go worker(*client, request, outChan[i], c.events) //hand over the slice to the worker
+			//fmt.Println("made worker for thread ", i)
 		}
 
 		for i := 0; i < p.Threads; i++ {
 			newWorld = append(newWorld, <-outChan[i]...)
 		}
 
-		world = newWorld
-		completedTurns++
-		c.events <- TurnComplete{CompletedTurns: completedTurns}
+		World = newWorld
+		CompletedTurns++
+		c.events <- TurnComplete{CompletedTurns: CompletedTurns}
 	}
 
 	finish(c, cellCountDone, filename)
