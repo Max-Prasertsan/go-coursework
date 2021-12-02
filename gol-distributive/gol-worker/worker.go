@@ -19,6 +19,7 @@ func modulo(x, m int) int {
 	return (x%m + m) % m
 }
 
+//computeNextTurn computes the next turn of the game of life on a slice of the game matrix
 func computeNextTurn(req stubs.Request) *stubs.Response {
 	response := new(stubs.Response)
 
@@ -26,7 +27,6 @@ func computeNextTurn(req stubs.Request) *stubs.Response {
 	for i := range newWorld {
 		newWorld[i] = make([]byte, req.ImageWidth)
 	}
-
 	var flippedCells []util.Cell
 
 	modifiers := []int{-1, 0, 1}
@@ -52,7 +52,7 @@ func computeNextTurn(req stubs.Request) *stubs.Response {
 			if req.World[x][y] == ALIVE {
 				if aliveNeighbours < 2 || aliveNeighbours > 3{
 					newWorld[x - req.SliceStart][y] = DEAD
-					flippedCells = append(flippedCells, util.Cell{X:y, Y:x})
+					flippedCells = append(flippedCells, util.Cell{X:y, Y:x}) //if a cell dies add it to the flippedCells list
 				} else {
 					newWorld[x - req.SliceStart][y] = ALIVE
 				}
@@ -60,7 +60,7 @@ func computeNextTurn(req stubs.Request) *stubs.Response {
 			} else {
 				if aliveNeighbours == 3 {
 					newWorld[x - req.SliceStart][y] = ALIVE
-					flippedCells = append(flippedCells, util.Cell{X:y, Y:x})
+					flippedCells = append(flippedCells, util.Cell{X:y, Y:x}) //if a cell is born add it to the flippedCells list
 				} else {
 					newWorld[x - req.SliceStart][y] = DEAD
 				}
@@ -68,6 +68,7 @@ func computeNextTurn(req stubs.Request) *stubs.Response {
 		}
 	}
 
+	//update the response
 	response.WorldSlice = newWorld
 	response.FlippedCells =flippedCells
 
@@ -78,31 +79,32 @@ func worker (req stubs.Request, out chan<- *stubs.Response) {
 	out <- computeNextTurn(req)
 }
 
+//ComputeNextTurn distributes the handed slice into smaller slices to workers
 func (g *GolOperations) ComputeNextTurn(req stubs.Request, res *stubs.Response) (err error) {
 
 	fmt.Println("Computing a turn...")
 	fmt.Println("World size: ", req.ImageHeight, "x", req.ImageWidth)
 	fmt.Println("Slice start: ", req.SliceStart)
-	fmt.Println("SliceEnd: ", req.SliceEnd)
+	fmt.Println("Slice end: ", req.SliceEnd)
 
 	var newWorld [][]uint8
 	var flippedCells []util.Cell
-	var outChan [16]chan *stubs.Response//create an array of channels
-	//TODO: find a way to allocate channels dynamically
-	//'var outChan []chan [][]uint8' 'var outChan [p.Threads]chan [][]uint8' don't work (???)
-
-	fmt.Println(req.SliceNo)
+	var outChan [16]chan *stubs.Response //create an array of channels
 	ipSliceSize := req.SliceEnd - req.SliceStart
 
 	for i := 0 ; i <  req.Threads ; i ++ {
 		outChan[i] = make(chan *stubs.Response)
 
-		sliceStart := ipSliceSize * req.SliceNo + (ipSliceSize / req.Threads) * i
-		sliceEnd := ipSliceSize * req.SliceNo + (ipSliceSize / req.Threads) * (i + 1)
+		sliceStart := ipSliceSize * req.SliceNo + (ipSliceSize / req.Threads) * i //mark the start of the slice
+		sliceEnd := ipSliceSize * req.SliceNo + (ipSliceSize / req.Threads) * (i + 1) //mark the end of the slice
+
+		fmt.Println("Internal slice start:", sliceStart)
+		fmt.Println("Internal Slice end: ", sliceEnd)
+
 		if i == req.Threads - 1 { //if this the last thread
-			sliceEnd = req.SliceEnd  //the slice will include the last few lines left over
+			sliceEnd = req.SliceEnd  //the end of the slice will be the same as the end of the handed over slice
 		}
-		request := stubs.Request{
+		request := stubs.Request{ //form request
 			World:       req.World,
 			ImageWidth:  req.ImageWidth,
 			ImageHeight: req.ImageHeight,
@@ -110,20 +112,16 @@ func (g *GolOperations) ComputeNextTurn(req stubs.Request, res *stubs.Response) 
 			SliceEnd:    sliceEnd,
 		}
 
-		fmt.Println("internal slice start:", request.SliceStart)
-		fmt.Println("internal Slice end: ", request.SliceEnd)
-
-		go worker(request, outChan[i])
+		go worker(request, outChan[i]) //hand over the request to the worker
 	}
 
 	for i := 0 ; i <  req.Threads ; i ++ {
 		t := <-outChan[i]
-		newWorld = append(newWorld, t.WorldSlice ...)
-		for i := range t.FlippedCells {
-			flippedCells = append(flippedCells, t.FlippedCells[i])
-		}
+		newWorld = append(newWorld, t.WorldSlice ...) //append the slices
+		flippedCells = append(flippedCells, t.FlippedCells...) //append the flipped cells lists
 	}
 
+	//update the response
 	res.WorldSlice = newWorld
 	res.FlippedCells = flippedCells
 
