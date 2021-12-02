@@ -8,23 +8,23 @@ import (
 	"testing"
 	"time"
 
-	"uk.ac.bris.cs/gameoflife/gol"
+	"uk.ac.bris.cs/gameoflife/gol-controller"
 	"uk.ac.bris.cs/gameoflife/util"
 )
 
 // TestAlive will automatically check the 512x512 cell counts for the first 5 messages.
 // You can manually check your counts by looking at CSVs provided in check/alive
 func TestAlive(t *testing.T) {
-	p := gol.Params{
+	p := gol_controller.Params{
 		Turns:       100000000,
 		Threads:     8,
 		ImageWidth:  512,
 		ImageHeight: 512,
 	}
 	alive := readAliveCounts(p.ImageWidth, p.ImageHeight)
-	events := make(chan gol.Event)
+	events := make(chan gol_controller.Event)
 	keyPresses := make(chan rune, 2)
-	go gol.Run(p, events, keyPresses)
+	go gol_controller.Run(p, events, keyPresses)
 
 	implemented := make(chan bool)
 	go func() {
@@ -41,9 +41,9 @@ func TestAlive(t *testing.T) {
 	turn := 0
     	for event := range events {
         	switch e := event.(type) {
-        		case gol.TurnComplete:
+        		case gol_controller.TurnComplete:
             		turn++
-        		case gol.AliveCellsCount:
+        		case gol_controller.AliveCellsCount:
             		var expected int
             		if e.CompletedTurns != turn {
                 		t.Fatalf("Expected turn to be %v, got %v instead", turn, e.CompletedTurns)

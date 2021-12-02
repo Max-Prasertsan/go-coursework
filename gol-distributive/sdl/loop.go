@@ -3,10 +3,10 @@ package sdl
 import (
 	"fmt"
 	"github.com/veandco/go-sdl2/sdl"
-	"uk.ac.bris.cs/gameoflife/gol"
+	"uk.ac.bris.cs/gameoflife/gol-controller"
 )
 
-func Run(p gol.Params, events <-chan gol.Event, keyPresses chan<- rune) {
+func Run(p gol_controller.Params, events <-chan gol_controller.Event, keyPresses chan<- rune) {
 	w := NewWindow(int32(p.ImageWidth), int32(p.ImageHeight))
 
 sdlLoop:
@@ -34,11 +34,11 @@ sdlLoop:
 				break sdlLoop
 			}
 			switch e := event.(type) {
-			case gol.CellFlipped:
+			case gol_controller.CellFlipped:
 				w.FlipPixel(e.Cell.X, e.Cell.Y)
-			case gol.TurnComplete:
+			case gol_controller.TurnComplete:
 				w.RenderFrame()
-			case gol.FinalTurnComplete:
+			case gol_controller.FinalTurnComplete:
 				w.Destroy()
 				break sdlLoop
 			default:

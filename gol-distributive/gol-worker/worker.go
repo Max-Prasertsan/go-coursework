@@ -19,13 +19,9 @@ func modulo(x, m int) int {
 	return (x%m + m) % m
 }
 
-func (g *GolOperations) ComputeNextTurn(req stubs.Request, res *stubs.Response) (err error) {
+func computeNextTurn(req stubs.Request) *stubs.Response {
+	response := new(stubs.Response)
 
-	fmt.Println("Computing a turn...")
-	fmt.Println("World size: ", req.ImageHeight, "x", req.ImageWidth)
-	fmt.Println("Slice start: ", req.SliceStart)
-	fmt.Println("SliceEnd: ", req.SliceEnd)
-	//create new 2D slice to store the result in
 	newWorld := make([][]byte, req.SliceEnd-req.SliceStart)
 	for i := range newWorld {
 		newWorld[i] = make([]byte, req.ImageWidth)
@@ -72,10 +68,64 @@ func (g *GolOperations) ComputeNextTurn(req stubs.Request, res *stubs.Response) 
 		}
 	}
 
+	response.WorldSlice = newWorld
+	response.FlippedCells =flippedCells
+
+	return response
+}
+
+func worker (req stubs.Request, out chan<- *stubs.Response) {
+	out <- computeNextTurn(req)
+}
+
+func (g *GolOperations) ComputeNextTurn(req stubs.Request, res *stubs.Response) (err error) {
+
+	fmt.Println("Computing a turn...")
+	fmt.Println("World size: ", req.ImageHeight, "x", req.ImageWidth)
+	fmt.Println("Slice start: ", req.SliceStart)
+	fmt.Println("SliceEnd: ", req.SliceEnd)
+
+	var newWorld [][]uint8
+	var flippedCells []util.Cell
+	var outChan [16]chan *stubs.Response//create an array of channels
+	//TODO: find a way to allocate channels dynamically
+	//'var outChan []chan [][]uint8' 'var outChan [p.Threads]chan [][]uint8' don't work (???)
+
+	fmt.Println(req.SliceNo)
+	ipSliceSize := req.SliceEnd - req.SliceStart
+
+	for i := 0 ; i <  req.Threads ; i ++ {
+		outChan[i] = make(chan *stubs.Response)
+
+		sliceStart := ipSliceSize * req.SliceNo + (ipSliceSize / req.Threads) * i
+		sliceEnd := ipSliceSize * req.SliceNo + (ipSliceSize / req.Threads) * (i + 1)
+		if i == req.Threads - 1 { //if this the last thread
+			sliceEnd = req.SliceEnd  //the slice will include the last few lines left over
+		}
+		request := stubs.Request{
+			World:       req.World,
+			ImageWidth:  req.ImageWidth,
+			ImageHeight: req.ImageHeight,
+			SliceStart:  sliceStart,
+			SliceEnd:    sliceEnd,
+		}
+
+		fmt.Println("internal slice start:", request.SliceStart)
+		fmt.Println("internal Slice end: ", request.SliceEnd)
+
+		go worker(request, outChan[i])
+	}
+
+	for i := 0 ; i <  req.Threads ; i ++ {
+		t := <-outChan[i]
+		newWorld = append(newWorld, t.WorldSlice ...)
+		for i := range t.FlippedCells {
+			flippedCells = append(flippedCells, t.FlippedCells[i])
+		}
+	}
+
 	res.WorldSlice = newWorld
 	res.FlippedCells = flippedCells
-
-	//fmt.Println("Flipped cells: ", flippedCells)
 
 	return
 }

@@ -6,14 +6,14 @@ import (
 	"net/rpc"
 	"runtime"
 
-	"uk.ac.bris.cs/gameoflife/gol"
+	"uk.ac.bris.cs/gameoflife/gol-controller"
 	"uk.ac.bris.cs/gameoflife/sdl"
 )
 
 // main is the function called when starting Game of Life with 'go run .'
 func main() {
 	runtime.LockOSThread()
-	var params gol.Params
+	var params gol_controller.Params
 
 	flag.IntVar(
 		&params.Threads,
@@ -60,9 +60,9 @@ func main() {
 	fmt.Println("Height:", params.ImageHeight)
 
 	keyPresses := make(chan rune, 10)
-	events := make(chan gol.Event, 1000)
+	events := make(chan gol_controller.Event, 1000)
 
-	go gol.Run(params, events, keyPresses)
+	go gol_controller.Run(params, events, keyPresses)
 	if !(*noVis) {
 		sdl.Run(params, events, keyPresses)
 	} else {
@@ -70,7 +70,7 @@ func main() {
 		for !complete {
 			event := <-events
 			switch event.(type) {
-			case gol.FinalTurnComplete:
+			case gol_controller.FinalTurnComplete:
 				complete = true
 			}
 		}

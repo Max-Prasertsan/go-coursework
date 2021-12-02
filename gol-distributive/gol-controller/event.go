@@ -1,4 +1,4 @@
-package gol
+package gol_controller
 
 import (
 	"fmt"

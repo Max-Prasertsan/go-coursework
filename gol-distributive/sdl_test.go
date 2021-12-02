@@ -8,11 +8,11 @@ import (
 	"testing"
 	"time"
 
-	"uk.ac.bris.cs/gameoflife/gol"
+	"uk.ac.bris.cs/gameoflife/gol-controller"
 	"uk.ac.bris.cs/gameoflife/sdl"
 )
 
-var sdlEvents chan gol.Event
+var sdlEvents chan gol_controller.Event
 var sdlAlive chan int
 
 func TestMain(m *testing.M) {
@@ -20,8 +20,8 @@ func TestMain(m *testing.M) {
 	noVis := flag.Bool("noVis", false,
 		"Disables the SDL window, so there is no visualisation during the tests.")
 	flag.Parse()
-	p := gol.Params{ImageWidth: 512, ImageHeight: 512}
-	sdlEvents = make(chan gol.Event)
+	p := gol_controller.Params{ImageWidth: 512, ImageHeight: 512}
+	sdlEvents = make(chan gol_controller.Event)
 	sdlAlive = make(chan int)
 	result := make(chan int)
 	go func() {
@@ -51,12 +51,12 @@ sdlLoop:
 				break sdlLoop
 			}
 			switch e := event.(type) {
-			case gol.CellFlipped:
+			case gol_controller.CellFlipped:
 				board[e.Cell.Y][e.Cell.X] = ^board[e.Cell.Y][e.Cell.X]
 				if w != nil {
 					w.FlipPixel(e.Cell.X, e.Cell.Y)
 				}
-			case gol.TurnComplete:
+			case gol_controller.TurnComplete:
 				if w != nil {
 					w.RenderFrame()
 				}
@@ -69,7 +69,7 @@ sdlLoop:
 					}
 				}
 				sdlAlive <- count
-			case gol.FinalTurnComplete:
+			case gol_controller.FinalTurnComplete:
 				if w != nil {
 					w.Destroy()
 				}
@@ -88,37 +88,37 @@ sdlLoop:
 
 // TestSdl tests a 512x512 image for 100 turns using 8 worker threads.
 func TestSdl(t *testing.T) {
-	p := gol.Params{ImageWidth: 512, ImageHeight: 512, Turns: 100, Threads: 8}
+	p := gol_controller.Params{ImageWidth: 512, ImageHeight: 512, Turns: 100, Threads: 8}
 	testName := fmt.Sprintf("%dx%dx%d-%d", p.ImageWidth, p.ImageHeight, p.Turns, p.Threads)
 	alive := readAliveCounts(p.ImageWidth, p.ImageHeight)
 	t.Run(testName, func(t *testing.T) {
 		turnNum := 0
-		events := make(chan gol.Event)
-		go gol.Run(p, events, nil)
+		events := make(chan gol_controller.Event)
+		go gol_controller.Run(p, events, nil)
 		time.Sleep(2 * time.Second)
 		final := false
 		for event := range events {
 			switch e := event.(type) {
-			case gol.CellFlipped:
+			case gol_controller.CellFlipped:
 				sdlEvents <- e
-			case gol.TurnComplete:
+			case gol_controller.TurnComplete:
 				turnNum++
 				sdlEvents <- e
 				aliveCount := <-sdlAlive
 				if alive[turnNum] != aliveCount {
 					t.Logf("Incorrect number of alive cells displayed on turn %d. Was %d, should be %d.", turnNum, aliveCount, alive[turnNum])
 					time.Sleep(5 * time.Second)
-					sdlEvents <- gol.FinalTurnComplete{}
+					sdlEvents <- gol_controller.FinalTurnComplete{}
 					t.FailNow()
 				}
-			case gol.FinalTurnComplete:
+			case gol_controller.FinalTurnComplete:
 				final = true
 				sdlEvents <- e
 			}
 		}
 
 		if !final {
-			sdlEvents <- gol.FinalTurnComplete{}
+			sdlEvents <- gol_controller.FinalTurnComplete{}
 			t.Fatal("Simulation finished without sending a FinalTurnComplete event.")
 		}
 	})

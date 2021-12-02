@@ -3,6 +3,7 @@ package stubs
 import "uk.ac.bris.cs/gameoflife/util"
 
 var ComputeNextTurnHandler = "GolOperations.ComputeNextTurn"
+var BrokerHandler = "BrokerOperations.Broker"
 
 type Request struct {
 	World [][]uint8
@@ -10,6 +11,8 @@ type Request struct {
 	ImageHeight int
 	SliceStart int
 	SliceEnd int
+	Threads int
+	SliceNo int
 }
 
 type Response struct {

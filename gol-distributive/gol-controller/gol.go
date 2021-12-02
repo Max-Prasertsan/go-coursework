@@ -1,4 +1,4 @@
-package gol
+package gol_controller
 
 // Params provides the details of how to run the Game of Life and which image to load.
 type Params struct {

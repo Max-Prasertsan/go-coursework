@@ -1,9 +1,11 @@
-package gol
+package gol_controller
 
 import (
 	"fmt"
+	"net/rpc"
 	"strconv"
 	"time"
+	"uk.ac.bris.cs/gameoflife/stubs"
 	"uk.ac.bris.cs/gameoflife/util"
 )
 
@@ -17,7 +19,6 @@ ioInput    <-chan uint8
 }
 
 const ALIVE byte = 0xff
-const DEAD byte = 0x00
 
 // World initialise global World, CompletedTurns, and LastTurn variables
 var World [][]uint8
@@ -101,6 +102,9 @@ func finish(c distributorChannels,cellCountDone <-chan bool ,filename string) {
 // distributor divides the work between workers and interacts with other goroutines.
 func distributor(p Params, c distributorChannels, keyPresses <-chan rune) {
 
+	client, _ := rpc.Dial("tcp", "127.0.0.1:8030")
+	defer client.Close()
+
 	//Create a 2D slice to store the World.
 	imageHeight := p.ImageHeight
 	imageWidth := p.ImageWidth
@@ -163,7 +167,27 @@ func distributor(p Params, c distributorChannels, keyPresses <-chan rune) {
 		default:
 		}
 
-		World = Broker(World, imageHeight, imageWidth, c.events)
+		request := stubs.Request{
+			World: World,
+			ImageWidth: imageWidth,
+			ImageHeight: imageHeight,
+			SliceStart: 0,
+			SliceEnd: imageHeight,
+			Threads: p.Threads,
+		}
+
+		response := new(stubs.Response)
+		client.Call(stubs.BrokerHandler, request, response)
+
+		t := response.WorldSlice
+		World = t
+
+		for i := range response.FlippedCells {
+			c.events <- CellFlipped{
+				Cell: response.FlippedCells[i],
+				CompletedTurns: CompletedTurns,
+			}
+		}
 
 		CompletedTurns++
 		c.events <- TurnComplete{CompletedTurns: CompletedTurns}
